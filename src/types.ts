@@ -24,6 +24,23 @@ export interface Category {
   image?: string; // Optional cover image URL
 }
 
+export interface ProductionStation {
+  id: string;
+  name: string;
+}
+
+export interface OrderAuditLog {
+  editedBy: string;
+  userRole: string;
+  editedAt: string;
+  changesSummary: string;
+  addedItemsSummary?: string;
+  removedItemsSummary?: string;
+  previousTotal: number;
+  newTotal: number;
+  reason?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -34,6 +51,7 @@ export interface Product {
   isDrink: boolean; // false = Kitchen, true = Barista
   description?: string; // Optional descriptive text E.g. "Classic pepperoni pizza"
   isArchived?: boolean;
+  stationId?: string; // assigned production station
 }
 
 export interface Table {
@@ -53,6 +71,7 @@ export interface OrderItem {
   quantity: number;
   notes?: string;
   isDrink: boolean;
+  stationId?: string;
 }
 
 export enum OrderStatus {
@@ -88,6 +107,7 @@ export interface Order {
   waiterName?: string;
   cashierName?: string;
   customerNotes?: string;
+  auditHistory?: OrderAuditLog[];
 }
 
 export interface ReceiptTemplate {

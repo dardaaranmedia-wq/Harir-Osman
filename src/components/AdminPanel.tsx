@@ -1,25 +1,28 @@
 import React, { useState } from "react";
 import { usePOS } from "../store/posStore";
-import { UserRole, Table, Category, Product, Order, User, OrderStatus } from "../types";
+import { UserRole, Table, Category, Product, Order, User, OrderStatus, OrderItem } from "../types";
 import { 
   BarChart3, Settings, ShieldCheck, Users, Utensils, TableProperties, 
   Percent, FileJson, Sparkles, TrendingUp, DollarSign, ListOrdered, 
   Trash2, Edit, Plus, Check, Star, AlertTriangle, QrCode, Key, Eye, EyeOff, Save, Download, Coffee, Activity, X,
-  Copy, FolderPlus, Flame, Cake, Pizza, Soup
+  Copy, FolderPlus, Flame, Cake, Pizza, Soup, ChefHat, Printer
 } from "lucide-react";
 import { LunaLogo } from "./LunaLogo";
+import { ReceiptView } from "./ReceiptPrinters";
 
 export const AdminPanel: React.FC = () => {
   const { 
     currentUser, users, categories, products, tables, orders, settings,
+    productionStations, addProductionStation, updateProductionStation, deleteProductionStation,
+    adminEditPastOrder,
     updateVat, updateSettings, addUser, updateUser, deleteUser,
     addCategory, updateCategory, deleteCategory, addProduct, updateProduct, deleteProduct,
     addTable, removeTable, backupData, restoreData, addNotification,
     clearAllCategories, clearAllProducts, importNewMenu, reseedDefaultMenu
   } = usePOS();
 
-  // Active admin sub-tab: "reports" | "menu" | "users" | "tables" | "settings" | "manual"
-  const [adminTab, setAdminTab] = useState<"reports" | "menu" | "users" | "tables" | "settings" | "manual">("reports");
+  // Active admin sub-tab: "reports" | "menu" | "users" | "tables" | "settings" | "manual" | "stations"
+  const [adminTab, setAdminTab] = useState<"reports" | "menu" | "users" | "tables" | "settings" | "manual" | "stations">("reports");
 
   // Report Period Selector: "today" | "week" | "month" | "year"
   const [reportPeriod, setReportPeriod] = useState<"today" | "week" | "month" | "year">("month");
@@ -46,6 +49,7 @@ export const AdminPanel: React.FC = () => {
   // Selected Category ID
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("cat-breakfast");
   const [isAddingProductInline, setIsAddingProductInline] = useState(true);
+  const [adminProductSearch, setAdminProductSearch] = useState("");
 
   // Product details state
   const [prodName, setProdName] = useState("");
@@ -53,7 +57,21 @@ export const AdminPanel: React.FC = () => {
   const [prodPrice, setProdPrice] = useState(5.5);
   const [prodImage, setProdImage] = useState("");
   const [prodIsDrink, setProdIsDrink] = useState(false);
+  const [prodStationId, setProdStationId] = useState("station-kitchen");
   const [prodDescription, setProdDescription] = useState("");
+
+  // Stations management states
+  const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [editingStationName, setEditingStationName] = useState("");
+  const [newStationName, setNewStationName] = useState("");
+
+  // Past bill editing modal states
+  const [auditingOrder, setAuditingOrder] = useState<Order | null>(null);
+  const [auditedItems, setAuditedItems] = useState<OrderItem[]>([]);
+  const [auditDiscount, setAuditDiscount] = useState<number>(0);
+  const [auditService, setAuditService] = useState<number>(0);
+  const [auditReason, setAuditReason] = useState<string>("");
+  const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
 
   // Product Edit modal States
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -62,6 +80,7 @@ export const AdminPanel: React.FC = () => {
   const [editProdPrice, setEditProdPrice] = useState(5.5);
   const [editProdImage, setEditProdImage] = useState("");
   const [editProdIsDrink, setEditProdIsDrink] = useState(false);
+  const [editProdStationId, setEditProdStationId] = useState("station-kitchen");
   const [editProdDescription, setEditProdDescription] = useState("");
 
   // Employee Edit modal States
@@ -259,6 +278,7 @@ export const AdminPanel: React.FC = () => {
       available: true,
       image: imgUrl,
       isDrink: prodIsDrink,
+      stationId: prodStationId,
       description: prodDescription
     });
 
@@ -266,6 +286,7 @@ export const AdminPanel: React.FC = () => {
     setProdImage("");
     setProdPrice(5.5);
     setProdIsDrink(false);
+    setProdStationId("station-kitchen");
     setProdDescription("");
   };
 
@@ -276,6 +297,7 @@ export const AdminPanel: React.FC = () => {
     setEditProdPrice(p.price);
     setEditProdImage(p.image);
     setEditProdIsDrink(!!p.isDrink);
+    setEditProdStationId(p.stationId || "station-kitchen");
     setEditProdDescription(p.description || "");
   };
 
@@ -288,9 +310,78 @@ export const AdminPanel: React.FC = () => {
       price: editProdPrice,
       image: editProdImage,
       isDrink: editProdIsDrink,
+      stationId: editProdStationId,
       description: editProdDescription
     });
     setEditingProduct(null);
+  };
+
+  const handleInitiateEditBill = (order: Order) => {
+    setAuditingOrder(order);
+    setAuditedItems([...order.items]);
+    setAuditDiscount(order.discountAmount || 0);
+    setAuditService(order.serviceCharge || 0);
+    setAuditReason("");
+  };
+
+  const handleUpdateAuditQty = (pId: string, delta: number) => {
+    setAuditedItems(prev => prev.map(it => {
+      if (it.productId === pId) {
+        return { ...it, quantity: Math.max(0, it.quantity + delta) };
+      }
+      return it;
+    }).filter(it => it.quantity > 0));
+  };
+
+  const handleUpdateAuditPrice = (pId: string, newPrice: number) => {
+    setAuditedItems(prev => prev.map(it => {
+      if (it.productId === pId) {
+        return { ...it, price: Math.max(0, newPrice) };
+      }
+      return it;
+    }));
+  };
+
+  const handleAddProductToAudit = (pId: string) => {
+    const prod = products.find(p => p.id === pId);
+    if (!prod) return;
+    
+    const existing = auditedItems.find(it => it.productId === pId);
+    if (existing) {
+      handleUpdateAuditQty(pId, 1);
+    } else {
+      const newItem: OrderItem = {
+        name: prod.name,
+        productId: prod.id,
+        price: prod.price,
+        quantity: 1,
+        isDrink: !!prod.isDrink,
+        stationId: prod.stationId || (prod.isDrink ? "station-bar" : "station-kitchen")
+      };
+      setAuditedItems(prev => [...prev, newItem]);
+    }
+  };
+
+  const handleSaveBillAudits = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auditingOrder) return;
+
+    if (auditedItems.length === 0) {
+      addNotification("SYSTEM", "Update Rejected", "Order must contain at least one selection.");
+      return;
+    }
+
+    const editorName = currentUser?.name || "Admin (Auditing)";
+    adminEditPastOrder(
+      auditingOrder.id,
+      auditedItems,
+      auditDiscount,
+      auditService,
+      `${editorName}: ${auditReason || "Admin adjustments applied"}`
+    );
+
+    addNotification("SYSTEM", "Bill Edited Success", `Order ${auditingOrder.orderNumber} recalculated, audit logs generated.`);
+    setAuditingOrder(null);
   };
 
   const handleAddTable = (e: React.FormEvent) => {
@@ -354,6 +445,7 @@ export const AdminPanel: React.FC = () => {
           {[
             { id: "reports", label: "Reports & Channels", icon: BarChart3 },
             { id: "menu", label: "Beverages & Dishes", icon: Utensils },
+            { id: "stations", label: "Production Stations", icon: ChefHat },
             { id: "users", label: "Employees Auth", icon: Users },
             { id: "tables", label: "Floor Tables & QR", icon: TableProperties },
             { id: "settings", label: "Cafe Settings", icon: Settings },
@@ -736,6 +828,83 @@ export const AdminPanel: React.FC = () => {
                         )}
                       </div>
                     </div>
+
+                    {/* BILL EDITOR & LEDGER SEARCH */}
+                    <div className="bg-stone-950 p-5 rounded-2xl border border-stone-850 space-y-4 font-sans">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-stone-900">
+                        <div>
+                          <h4 className="text-[11px] uppercase font-black text-[#E5C158] tracking-wider">
+                            Daily Bills Ledger & Auditing Terminal
+                          </h4>
+                          <p className="text-[10px] text-stone-500 font-medium">Browse, adjust pricing, modify item counts, and reprint past receipts.</p>
+                        </div>
+                        <span className="text-[9px] bg-stone-900 border border-stone-805 text-stone-300 px-2.5 py-1 rounded-md font-bold font-mono">
+                          {dayOrders.length} Completed Bills
+                        </span>
+                      </div>
+
+                      {dayOrders.length === 0 ? (
+                        <div className="text-center py-8 text-stone-600 text-xs font-bold uppercase tracking-wider">
+                          No transactions found on {selectedLedgerDate}
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-stone-900 text-stone-400 font-extrabold uppercase text-[9px] tracking-wider">
+                                <th className="py-2.5">Order No</th>
+                                <th className="py-2.5">Table</th>
+                                <th className="py-2.5">Waiter</th>
+                                <th className="py-2.5">Status</th>
+                                <th className="py-2.5">Channel</th>
+                                <th className="py-2.5 text-right font-mono">Settle Amount</th>
+                                <th className="py-2.5 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-stone-900/60">
+                              {dayOrders.map(order => (
+                                <tr key={order.id} className="text-stone-300 hover:bg-stone-900/40 transition">
+                                  <td className="py-3 font-semibold font-mono text-white">{order.orderNumber}</td>
+                                  <td className="py-3 font-extrabold text-amber-400 uppercase">{order.tableName}</td>
+                                  <td className="py-3 text-stone-400 font-medium">{order.waiterName || "Self-QR"}</td>
+                                  <td className="py-3 font-bold">
+                                    <span className={`px-2 py-0.5 rounded text-[9px] uppercase tracking-wide font-black ${
+                                      order.status === "Paid" || order.paymentStatus === "Paid" 
+                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-950"
+                                        : "bg-amber-500/10 text-amber-500 border border-amber-950"
+                                    }`}>
+                                      {order.status}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 font-mono text-[10px] text-stone-400">{order.paymentMethod || "Cache"}</td>
+                                  <td className="py-3 text-right font-bold font-mono text-white">${(order.grandTotal ?? order.totalAmount ?? 0).toFixed(2)}</td>
+                                  <td className="py-3 text-right">
+                                    <div className="flex justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInitiateEditBill(order)}
+                                        className="px-2.5 py-1 text-[10px] font-bold bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 rounded-lg transition-all transform active:scale-95 cursor-pointer flex items-center gap-1"
+                                      >
+                                        <Edit className="w-3 h-3" />
+                                        Audit/Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setPrintingOrder(order)}
+                                        className="px-2.5 py-1 text-[10px] bg-stone-900 text-stone-300 hover:text-white rounded-lg border border-stone-800 transition cursor-pointer flex items-center gap-1"
+                                      >
+                                        <Printer className="w-3 h-3" />
+                                        Print
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })()}
@@ -971,7 +1140,14 @@ export const AdminPanel: React.FC = () => {
                   );
                 }
 
-                const catProducts = activeProducts.filter(p => p.categoryId === selectedCategory.id);
+                const catProducts = activeProducts
+                  .filter(p => adminProductSearch ? true : (p.categoryId === selectedCategory.id))
+                  .filter(p => {
+                    const matchesName = p.name.toLowerCase().includes(adminProductSearch.toLowerCase());
+                    const cat = categories.find(c => c.id === p.categoryId);
+                    const matchesCategoryName = cat ? cat.name.toLowerCase().includes(adminProductSearch.toLowerCase()) : false;
+                    return matchesName || matchesCategoryName;
+                  });
 
                 return (
                   <div className="flex-1 flex flex-col overflow-hidden">
@@ -1030,6 +1206,29 @@ export const AdminPanel: React.FC = () => {
                           <p className="text-[10px] text-stone-300 mt-0.5">Manage products and pricing for the {selectedCategory.name} station.</p>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Search Bar */}
+                    <div className="mb-4 relative shrink-0">
+                      <input 
+                        type="text"
+                        value={adminProductSearch}
+                        onChange={(e) => setAdminProductSearch(e.target.value)}
+                        placeholder="Search menu items, beverages, or dishes..."
+                        className="w-full text-xs pl-9 pr-9 py-2.5 rounded-xl bg-orange-50 hover:bg-white focus:bg-white text-stone-900 border-2 border-amber-800/60 outline-none focus:outline-none focus:border-amber-950 font-bold shadow-sm transition font-sans"
+                      />
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-950 font-black">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                      </span>
+                      {adminProductSearch && (
+                        <button 
+                          onClick={() => setAdminProductSearch("")}
+                          type="button"
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 hover:text-neutral-950 rounded-full font-semibold text-[9px] w-4.5 h-4.5 flex items-center justify-center transition"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
 
                     {/* Products Management Grid */}
@@ -1162,22 +1361,34 @@ export const AdminPanel: React.FC = () => {
                       </div>
                       
                       {isAddingProductInline && (
-                        <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-                          <div className="space-y-1">
+                        <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs">
+                          <div className="space-y-1 col-span-1">
                             <input 
                               type="text" required placeholder="Product Name"
                               value={prodName} onChange={(e) => setProdName(e.target.value)}
                               className="w-full p-2.5 bg-stone-900 border border-stone-850 rounded-xl text-white outline-none focus:border-[#E5C158]"
                             />
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1 col-span-1">
                             <input 
                               type="number" step="0.01" required min="0.1" max="1000000" placeholder="Price ($)"
                               value={prodPrice} onChange={(e) => setProdPrice(parseFloat(e.target.value) || 0)}
                               className="w-full p-2.5 bg-stone-900 border border-stone-850 rounded-xl text-white outline-none font-mono focus:border-[#E5C158]"
                             />
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1 col-span-1">
+                            <select 
+                              value={prodStationId} onChange={(e) => setProdStationId(e.target.value)}
+                              className="w-full p-2.5 bg-stone-900 border border-stone-850 rounded-xl text-white outline-none focus:border-[#E5C158]"
+                            >
+                              {productionStations.map(station => (
+                                <option key={station.id} value={station.id}>
+                                  {station.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1 col-span-1 flex-1">
                             <input 
                               type="text" placeholder="Description (E.g. Sweet, Creamy)"
                               value={prodDescription} onChange={(e) => setProdDescription(e.target.value)}
@@ -1782,6 +1993,18 @@ export const AdminPanel: React.FC = () => {
               </div>
             </div>
 
+            <div className="space-y-1">
+              <label className="font-bold text-stone-400 uppercase tracking-wider block">Production Station</label>
+              <select 
+                value={editProdStationId} onChange={(e) => setEditProdStationId(e.target.value)}
+                className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 font-bold outline-none cursor-pointer text-stone-200"
+              >
+                {productionStations.map(station => (
+                  <option key={station.id} value={station.id}>{station.name}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Editing Preset pictures selection */}
             <div className="space-y-2">
               <label className="font-bold text-stone-400 uppercase tracking-wider block">Choose Visual Preset Photo</label>
@@ -1833,6 +2056,180 @@ export const AdminPanel: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* PAST BILL AUDITING & EDITS MODAL */}
+      {auditingOrder && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <form onSubmit={handleSaveBillAudits} className="bg-stone-900 border border-stone-800 text-white rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl relative text-xs flex flex-col max-h-[90vh]">
+            <button 
+              type="button"
+              onClick={() => setAuditingOrder(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full text-stone-400 hover:text-white bg-stone-950 border border-stone-800"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2 border-b border-stone-800 pb-3 shrink-0">
+              <Printer className="w-4 h-4 text-[#E5C158]" />
+              <div>
+                <h3 className="font-black text-sm uppercase tracking-wider text-white">Audit/Edit Past Receipt</h3>
+                <p className="text-[10px] text-stone-400">Order: {auditingOrder.orderNumber} • Table: {auditingOrder.tableName}</p>
+              </div>
+            </div>
+
+            {/* List of items current in bill */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[140px]">
+              <span className="text-[10px] text-amber-400 font-extrabold uppercase tracking-wider block">Adjust Selection Items</span>
+              {auditedItems.length === 0 ? (
+                <p className="text-center py-6 text-stone-500 font-bold uppercase">No items on this bill. Add some below.</p>
+              ) : (
+                <div className="space-y-2">
+                  {auditedItems.map(item => (
+                    <div key={item.productId} className="bg-stone-950 p-3 rounded-xl border border-stone-850 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-extrabold text-white text-xs truncate">{item.name}</p>
+                        <p className="text-[9px] text-[#E5C158] font-bold uppercase tracking-wider">
+                          Station: {productionStations.find(s => s.id === item.stationId)?.name || "Kitchen"}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-4 shrink-0 justify-between sm:justify-start">
+                        {/* Unit Price Input */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] text-stone-500 font-bold uppercase">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={item.price}
+                            onChange={(e) => handleUpdateAuditPrice(item.productId, parseFloat(e.target.value) || 0)}
+                            className="w-16 p-1 text-center bg-stone-900 border border-stone-800 rounded text-stone-200 outline-none text-[11px] font-mono font-bold"
+                            title="Edit Unit Settle Price"
+                          />
+                        </div>
+
+                        {/* Quantity controls */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateAuditQty(item.productId, -1)}
+                            className="w-6 h-6 rounded-md bg-stone-855 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="w-6 text-center font-bold font-mono text-white text-xs">{item.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateAuditQty(item.productId, 1)}
+                            className="w-6 h-6 rounded-md bg-stone-855 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add item search dropdown selection */}
+              <div className="pt-3 border-t border-stone-850/60 space-y-1.5 shrink-0">
+                <label className="text-[10px] text-stone-400 font-bold uppercase block">Add Dish/Beverage to Receipt</label>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val) {
+                      handleAddProductToAudit(val);
+                      e.target.value = ""; // reset dropdown
+                    }
+                  }}
+                  className="w-full p-2.5 bg-stone-950 border border-stone-855 rounded-xl text-stone-300 font-bold outline-none cursor-pointer text-xs"
+                >
+                  <option value="" disabled>-- Choose a product from the catalog to inject --</option>
+                  {products.filter(p => !p.isArchived).map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (${p.price.toFixed(2)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Calculations summaries & adjustments inputs */}
+            <div className="border-t border-stone-800 pt-3 space-y-3 shrink-0 bg-stone-900 p-1">
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-stone-400 font-bold uppercase block">Custom Discount ($)</label>
+                  <input 
+                    type="number" step="0.01" min="0" max="10000"
+                    value={auditDiscount} onChange={(e) => setAuditDiscount(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2 rounded-xl bg-stone-950 border border-stone-850 text-white outline-none font-mono font-bold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-stone-400 font-bold uppercase block">Service Charge ($)</label>
+                  <input 
+                    type="number" step="0.01" min="0" max="10000"
+                    value={auditService} onChange={(e) => setAuditService(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2 rounded-xl bg-stone-950 border border-stone-850 text-white outline-none font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Justification input */}
+              <div className="space-y-1">
+                <label className="text-[10px] text-stone-400 font-bold uppercase block">Audit Note / Reason for modifying bill</label>
+                <input 
+                  type="text" required placeholder="E.g. Refunded beverage, pricing adjustment"
+                  value={auditReason} onChange={(e) => setAuditReason(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-stone-950 border border-stone-850 text-white outline-none font-medium focus:border-[#E5C158]"
+                />
+              </div>
+            </div>
+
+            {/* Submit and Controls */}
+            <div className="grid grid-cols-2 gap-2 pt-2 shrink-0 border-t border-stone-805">
+              <button 
+                type="button"
+                onClick={() => setAuditingOrder(null)}
+                className="py-2.5 bg-stone-950 hover:bg-stone-800 rounded-xl font-bold border border-stone-800 cursor-pointer text-stone-400"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit"
+                className="py-2.5 bg-[#E5C158] hover:bg-[#D4AF37] text-stone-955 font-black uppercase tracking-wider font-mono rounded-xl cursor-pointer"
+              >
+                Log Changes
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ADMIN PRINTER DIALOG / PREVIEWER */}
+      {printingOrder && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-800 w-full max-w-md h-[90vh] rounded-3xl p-6 relative overflow-hidden flex flex-col shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setPrintingOrder(null)}
+              className="absolute top-4 right-4 text-stone-400 hover:text-white transition cursor-pointer z-10 p-1.5 bg-stone-950/80 rounded-full border border-stone-800"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex-1 overflow-hidden mt-4">
+              <ReceiptView
+                order={printingOrder}
+                settings={settings}
+                type="customer"
+                onClose={() => setPrintingOrder(null)}
+              />
+            </div>
+          </div>
         </div>
       )}
 
@@ -1923,6 +2320,154 @@ export const AdminPanel: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {adminTab === "stations" && (
+        <div className="flex-1 overflow-y-auto space-y-6 pr-2 pb-12 animate-fade-in">
+          <div className="bg-stone-900 border border-stone-850 p-6 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="space-y-1">
+              <span className="text-[10px] text-[#E5C158] uppercase tracking-widest font-black block">Prep Workspace Routing</span>
+              <h2 className="text-xl font-black text-white uppercase tracking-wider">Production Stations Setup</h2>
+              <p className="text-xs text-stone-400">Establish and coordinate kitchen prep locations. Customize receipts and route items seamlessly.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-stone-900 border border-stone-850 p-6 rounded-3xl space-y-4 shadow-xl">
+                <span className="text-[10px] text-[#E5C158] uppercase tracking-widest font-black block">Active Routing Locations</span>
+                
+                <div className="divide-y divide-stone-850">
+                  {productionStations.map(station => {
+                    const itemsInStation = products.filter(p => p.stationId === station.id && !p.isArchived);
+                    const isDeletingRestricted = station.id === "station-kitchen";
+
+                    return (
+                      <div key={station.id} className="py-3.5 flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          {editingStationId === station.id ? (
+                            <div className="flex items-center gap-2 max-w-sm">
+                              <input
+                                type="text"
+                                value={editingStationName}
+                                onChange={(e) => setEditingStationName(e.target.value)}
+                                className="flex-1 p-2 bg-stone-950 border border-stone-800 rounded-xl text-white outline-none focus:border-[#E5C158] text-xs font-bold"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (editingStationName.trim()) {
+                                    updateProductionStation(station.id, editingStationName.trim());
+                                    setEditingStationId(null);
+                                  }
+                                }}
+                                className="p-2 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-stone-950 rounded-xl transition cursor-pointer"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingStationId(null)}
+                                className="p-2 bg-stone-800 hover:bg-stone-750 text-stone-400 rounded-xl transition cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-0.5">
+                              <h4 className="text-sm font-black text-white hover:text-amber-400 transition cursor-default">
+                                {station.name}
+                              </h4>
+                              <p className="text-[10px] text-stone-500 font-extrabold font-mono uppercase">
+                                {itemsInStation.length} Menu Selection{itemsInStation.length !== 1 ? "s" : ""} Assigned
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {editingStationId !== station.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingStationId(station.id);
+                                setEditingStationName(station.name);
+                              }}
+                              className="p-2 text-stone-300 bg-stone-850 hover:bg-stone-800 rounded-xl transition cursor-pointer"
+                              title="Edit Station"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!isDeletingRestricted && (
+                            <button
+                              type="button"
+                              onClick={() => deleteProductionStation(station.id)}
+                              className="p-2 text-red-400 bg-red-950/20 hover:bg-red-950/80 rounded-xl transition cursor-pointer"
+                              title="Delete Station"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-stone-900 border border-stone-850 p-6 rounded-3xl space-y-4 shadow-xl">
+                <span className="text-[10px] text-[#E5C158] uppercase tracking-widest font-black block">Form Station Creator</span>
+                
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (newStationName.trim()) {
+                      addProductionStation(newStationName.trim());
+                      setNewStationName("");
+                    }
+                  }}
+                  className="space-y-3"
+                >
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider">Station Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="E.g. Coffee Corner"
+                      value={newStationName}
+                      onChange={(e) => setNewStationName(e.target.value)}
+                      className="w-full p-2.5 bg-stone-950 border border-stone-850 rounded-xl text-white outline-none focus:border-[#E5C158] text-xs font-medium"
+                    />
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 font-black rounded-xl text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer"
+                  >
+                    + Build Station
+                  </button>
+                </form>
+              </div>
+
+              <div className="bg-stone-900 border border-stone-850 p-6 rounded-3xl space-y-3 text-stone-400 text-xs shadow-xl leading-relaxed">
+                <span className="text-[10px] text-amber-400 uppercase tracking-widest font-black block">Operational Insight</span>
+                <p>
+                  Every menu selection must be mapped to exactly one active workspace/production station.
+                </p>
+                <p>
+                  When orders are submitted, they will be automatically separated to prevent beverages, appetizers, and desserts from routing on the same ticket.
+                </p>
+                <div className="flex gap-2 items-center text-[10px] text-stone-500 uppercase mt-2 pt-2 border-t border-stone-850 font-bold">
+                  <Activity className="w-3.5 h-3.5 text-[#E5C158]" />
+                  Real-time ticket routing active
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

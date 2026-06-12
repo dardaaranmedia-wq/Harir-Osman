@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { 
   User, UserRole, Category, Product, Table, Order, OrderItem, 
-  OrderStatus, Notification, SystemSettings 
+  OrderStatus, Notification, SystemSettings, ProductionStation, OrderAuditLog 
 } from "../types";
-import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_PRODUCTS, getInitialTables } from "../data";
+import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_PRODUCTS, getInitialTables, INITIAL_PRODUCTION_STATIONS } from "../data";
 
 interface POSContextType {
   currentUser: User | null;
@@ -14,6 +14,7 @@ interface POSContextType {
   orders: Order[];
   notifications: Notification[];
   settings: SystemSettings;
+  productionStations: ProductionStation[];
   loginPin: (pin: string) => User | null;
   loginAdmin: (email: string, pass: string) => User | null;
   logout: () => void;
@@ -31,6 +32,23 @@ interface POSContextType {
     discountAmount?: number, 
     serviceCharge?: number, 
     customerType?: "Dine-In" | "Takeaway" | "Delivery"
+  ) => void;
+  adminEditPastOrder: (
+    orderId: string,
+    items: OrderItem[],
+    discountAmount?: number,
+    serviceCharge?: number,
+    editorName?: string
+  ) => void;
+  updateOrderWithAuditTrail: (
+    orderId: string,
+    newItems: OrderItem[],
+    editorName: string,
+    editorRole: string,
+    discountAmount?: number,
+    serviceCharge?: number,
+    reason?: string,
+    customerNotes?: string
   ) => void;
   addNotification: (type: "KITCHEN" | "BARISTA" | "CASHIER" | "SYSTEM", title: string, message: string) => void;
   clearNotifications: () => void;
@@ -54,6 +72,9 @@ interface POSContextType {
   deleteProduct: (id: string) => void;
   addTable: (id: string, name: string) => void;
   removeTable: (tableId: string) => void;
+  addProductionStation: (name: string) => void;
+  updateProductionStation: (id: string, name: string) => void;
+  deleteProductionStation: (id: string) => void;
   backupData: () => string;
   restoreData: (jsonStr: string) => boolean;
   clearAllCategories: () => void;
@@ -84,12 +105,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [categories, setCategories] = useState<Category[]>(() => {
     const stored = localStorage.getItem("luna_categories");
-    return stored ? JSON.parse(stored) : INITIAL_CATEGORIES;
+    const raw = stored ? JSON.parse(stored) : INITIAL_CATEGORIES;
+    return raw.filter((c: Category) => c.id !== "cat-hot" && c.id !== "cat-cold" && c.id !== "cat-salads" && c.name !== "Hot Drinks" && c.name !== "Cold Drinks" && c.name !== "Salads");
   });
 
   const [products, setProducts] = useState<Product[]>(() => {
     const stored = localStorage.getItem("luna_products");
-    return stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
+    const raw = stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
+    return raw.filter((p: Product) => p.categoryId !== "cat-hot" && p.categoryId !== "cat-cold" && p.categoryId !== "cat-salads");
   });
 
   const [tables, setTables] = useState<Table[]>(() => {
@@ -106,6 +129,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const stored = localStorage.getItem("luna_notifications");
     return stored ? JSON.parse(stored) : [];
   });
+
+  const [productionStations, setProductionStations] = useState<ProductionStation[]>(() => {
+    const stored = localStorage.getItem("luna_production_stations");
+    return stored ? JSON.parse(stored) : INITIAL_PRODUCTION_STATIONS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("luna_production_stations", JSON.stringify(productionStations));
+  }, [productionStations]);
 
   const [settings, setSettings] = useState<SystemSettings>(() => {
     const stored = localStorage.getItem("luna_settings");
@@ -214,6 +246,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (e.key === "luna_settings" && e.newValue) {
         setSettings(JSON.parse(e.newValue));
       }
+      if (e.key === "luna_production_stations" && e.newValue) {
+        setProductionStations(JSON.parse(e.newValue));
+      }
     };
 
     window.addEventListener("storage", handleStorageChange);
@@ -296,7 +331,16 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tblId = targetTable ? targetTable.tableId : `LUNA-T${tableId}`;
     const tblName = targetTable ? targetTable.name : `Table ${tableId}`;
 
-    const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const itemsWithStations = items.map(item => {
+      const prod = products.find(p => p.id === item.productId);
+      const computedStationId = prod?.stationId || (prod?.isDrink ? (prod.categoryId === "cat-juices" ? "station-juice" : "station-bar") : (prod?.categoryId === "cat-desserts" ? "station-dessert" : "station-kitchen"));
+      return {
+        ...item,
+        stationId: item.stationId || computedStationId || "station-kitchen"
+      };
+    });
+
+    const subtotal = itemsWithStations.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const vatRate = settings.vatPercentage / 100;
     const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
     const grandTotal = parseFloat((subtotal + vatAmount).toFixed(2));
@@ -309,7 +353,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orderNumber: orderNo,
       tableId: tblId,
       tableName: tblName,
-      items,
+      items: itemsWithStations,
       status: isQR ? OrderStatus.PENDING_QR : OrderStatus.NEW,
       subtotal,
       vatRate,
@@ -412,13 +456,21 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateOrderItems = (orderId: string, items: OrderItem[], notes?: string) => {
     setOrders(prev => prev.map(o => {
       if (o.id === orderId) {
-        const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const itemsWithStations = items.map(item => {
+          const prod = products.find(p => p.id === item.productId);
+          const computedStationId = prod?.stationId || (prod?.isDrink ? (prod.categoryId === "cat-juices" ? "station-juice" : "station-bar") : (prod?.categoryId === "cat-desserts" ? "station-dessert" : "station-kitchen"));
+          return {
+            ...item,
+            stationId: item.stationId || computedStationId || "station-kitchen"
+          };
+        });
+        const subtotal = itemsWithStations.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const vatRate = o.vatRate;
         const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
         const grandTotal = parseFloat((subtotal + vatAmount).toFixed(2));
         return {
           ...o,
-          items,
+          items: itemsWithStations,
           subtotal,
           vatAmount,
           grandTotal,
@@ -604,6 +656,181 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification("SYSTEM", `Table Status Changed`, `Table ${tableId} ${wasEnabled ? 'Disabled' : 'Enabled'}.`);
   };
 
+  const addProductionStation = (name: string) => {
+    const newStation: ProductionStation = {
+      id: "station-" + Math.random().toString(36).substr(2, 9),
+      name,
+    };
+    setProductionStations(prev => [...prev, newStation]);
+    addNotification("SYSTEM", `Station Formed`, `Production Station "${name}" created.`);
+  };
+
+  const updateProductionStation = (id: string, name: string) => {
+    setProductionStations(prev => prev.map(s => s.id === id ? { ...s, name } : s));
+  };
+
+  const deleteProductionStation = (id: string) => {
+    setProductionStations(prev => prev.filter(s => s.id !== id));
+    // Reassign products of this deleted station back to "station-kitchen"
+    setProducts(prev => prev.map(p => p.stationId === id ? { ...p, stationId: "station-kitchen" } : p));
+    addNotification("SYSTEM", `Station Deleted`, `Station deleted. Reassigned products to Kitchen.`);
+  };
+
+  const adminEditPastOrder = (
+    orderId: string,
+    items: OrderItem[],
+    discountAmount?: number,
+    serviceCharge?: number,
+    editorName?: string
+  ) => {
+    setOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const vatRate = o.vatRate;
+        const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
+        
+        const finalDiscount = discountAmount !== undefined ? discountAmount : (o.discountAmount || 0);
+        const finalService = serviceCharge !== undefined ? serviceCharge : (o.serviceCharge || 0);
+        const grandTotal = parseFloat((subtotal + vatAmount + finalService - finalDiscount).toFixed(2));
+
+        // Log changes
+        const auditLog: OrderAuditLog = {
+          editedBy: editorName || currentUser?.name || "Admin",
+          userRole: currentUser?.role || "Admin",
+          editedAt: new Date().toISOString(),
+          changesSummary: `Modified order: items recalculated by Administrator.`,
+          previousTotal: o.grandTotal,
+          newTotal: grandTotal,
+          reason: "Administrator adjustment"
+        };
+
+        const checkedItems = items.map(item => {
+          const prod = products.find(p => p.id === item.productId);
+          const computedStationId = prod?.stationId || (prod?.isDrink ? (prod.categoryId === "cat-juices" ? "station-juice" : "station-bar") : (prod?.categoryId === "cat-desserts" ? "station-dessert" : "station-kitchen"));
+          return {
+            ...item,
+            stationId: item.stationId || computedStationId || "station-kitchen"
+          };
+        });
+
+        const amountReceived = o.amountReceived || grandTotal;
+        const balanceReturned = Math.max(0, amountReceived - grandTotal);
+
+        return {
+          ...o,
+          items: checkedItems,
+          subtotal,
+          vatAmount,
+          discountAmount: finalDiscount,
+          serviceCharge: finalService,
+          grandTotal,
+          balanceReturned,
+          updatedAt: new Date().toISOString(),
+          auditHistory: [...(o.auditHistory || []), auditLog]
+        };
+      }
+      return o;
+    }));
+
+    addNotification("SYSTEM", `Past Bill Edited`, `Order ${orderId} updated by administrator.`);
+  };
+
+  const updateOrderWithAuditTrail = (
+    orderId: string,
+    newItems: OrderItem[],
+    editorName: string,
+    editorRole: string,
+    discountAmount?: number,
+    serviceCharge?: number,
+    reason?: string,
+    customerNotes?: string
+  ) => {
+    setOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        // Compare items
+        const originalMap = new Map<string, number>();
+        o.items.forEach(it => {
+          originalMap.set(it.productId, (originalMap.get(it.productId) || 0) + it.quantity);
+        });
+
+        const newMap = new Map<string, number>();
+        newItems.forEach(it => {
+          newMap.set(it.productId, (newMap.get(it.productId) || 0) + it.quantity);
+        });
+
+        const added: string[] = [];
+        const removed: string[] = [];
+        const allProductIds = new Set([...originalMap.keys(), ...newMap.keys()]);
+        
+        allProductIds.forEach(pId => {
+          const oldQty = originalMap.get(pId) || 0;
+          const newQty = newMap.get(pId) || 0;
+          
+          const prodName = newItems.find(it => it.productId === pId)?.name || o.items.find(it => it.productId === pId)?.name || "Product";
+
+          if (newQty > oldQty) {
+            added.push(`${prodName} (x${newQty - oldQty})`);
+          } else if (oldQty > newQty) {
+            removed.push(`${prodName} (x${oldQty - newQty})`);
+          }
+        });
+
+        const addedItemsSummary = added.join(", ") || "None";
+        const removedItemsSummary = removed.join(", ") || "None";
+
+        // Assign stations properly
+        const checkedItems = newItems.map(item => {
+          const prod = products.find(p => p.id === item.productId);
+          const computedStationId = prod?.stationId || (prod?.isDrink ? "station-bar" : "station-kitchen");
+          return {
+            ...item,
+            stationId: item.stationId || computedStationId
+          };
+        });
+
+        const subtotal = checkedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const vatRate = o.vatRate;
+        const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
+        
+        const finalDiscount = discountAmount !== undefined ? discountAmount : (o.discountAmount || 0);
+        const finalService = serviceCharge !== undefined ? serviceCharge : (o.serviceCharge || 0);
+        const grandTotal = parseFloat((subtotal + vatAmount + finalService - finalDiscount).toFixed(2));
+        
+        const amountReceived = o.amountReceived || grandTotal;
+        const balanceReturned = Math.max(0, amountReceived - grandTotal);
+
+        const auditLog: OrderAuditLog = {
+          editedBy: editorName,
+          userRole: editorRole,
+          editedAt: new Date().toISOString(),
+          changesSummary: `Items modified. Added: ${addedItemsSummary}. Removed: ${removedItemsSummary}.`,
+          addedItemsSummary,
+          removedItemsSummary,
+          previousTotal: o.grandTotal,
+          newTotal: grandTotal,
+          reason: reason || "Standard order edit"
+        };
+
+        return {
+          ...o,
+          items: checkedItems,
+          subtotal,
+          vatAmount,
+          discountAmount: finalDiscount,
+          serviceCharge: finalService,
+          grandTotal,
+          balanceReturned,
+          customerNotes: customerNotes !== undefined ? customerNotes : o.customerNotes,
+          updatedAt: new Date().toISOString(),
+          auditHistory: [...(o.auditHistory || []), auditLog]
+        };
+      }
+      return o;
+    }));
+
+    addNotification("SYSTEM", "Audit Completed", `Order ${orderId} audited successfully.`);
+  };
+
   const backupData = (): string => {
     const data = {
       users,
@@ -661,12 +888,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <POSContext.Provider value={{
       currentUser, users, categories, products, tables, orders, notifications, settings,
+      productionStations,
       loginPin, loginAdmin, logout, createOrder, approveOrder, rejectOrder, updateOrderItems,
-      serveOrder, payOrder, addNotification, clearNotifications, markNotificationsAsRead, triggerChime,
+      serveOrder, payOrder, adminEditPastOrder, updateOrderWithAuditTrail, addNotification, clearNotifications, markNotificationsAsRead, triggerChime,
       theme, setTheme, updateOrderWaiter,
       updateVat, updateSettings, addUser, updateUser, deleteUser,
       addCategory, updateCategory, deleteCategory, addProduct, updateProduct, deleteProduct,
-      addTable, removeTable, backupData, restoreData,
+      addTable, removeTable, addProductionStation, updateProductionStation, deleteProductionStation, backupData, restoreData,
       clearAllCategories, clearAllProducts, importNewMenu, reseedDefaultMenu
     }}>
       {children}

@@ -3,7 +3,7 @@ import { usePOS } from "../store/posStore";
 import { OrderItem, OrderStatus, Product } from "../types";
 import { 
   ShoppingBag, Check, ArrowLeft, Search, Plus, Minus, 
-  Trash2, MessageSquare, Clock, ShieldCheck, Soup, Coffee, ChevronRight, CheckCircle2 
+  Trash2, MessageSquare, Clock, ShieldCheck, Soup, Coffee, ChevronRight, CheckCircle2, X 
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { LunaLogo } from "./LunaLogo";
@@ -107,10 +107,13 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
     setActiveTab("status");
   };
 
-  const filteredProducts = products.filter(p => !p.isArchived).filter(product => {
-    const matchCat = selectedCategory === "all" || product.categoryId === selectedCategory;
-    const matchSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
+  const filteredProducts = products.filter(p => !p.isArchived && p.available).filter(product => {
+    // If there is an active search query, allow matching from all categories
+    const matchCat = searchQuery ? true : (selectedCategory === "all" || product.categoryId === selectedCategory);
+    const matchesName = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const cat = categories.find(c => c.id === product.categoryId);
+    const matchesCategoryName = cat ? cat.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+    return matchCat && (matchesName || matchesCategoryName);
   });
 
   return (
@@ -335,11 +338,11 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-neutral-100 space-y-2 text-xs font-medium text-neutral-600">
                   <div className="flex justify-between">
                     <span>Subtotal</span>
-                    <span className="font-bold text-neutral-805">${cartSubtotal.toFixed(2)}</span>
+                    <span className="font-bold text-neutral-800">${cartSubtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>VAT ({settings.vatPercentage}%)</span>
-                    <span className="font-bold text-neutral-805">${vatAmount.toFixed(2)}</span>
+                    <span className="font-bold text-neutral-800">${vatAmount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm font-black text-neutral-900 border-t border-neutral-100 pt-2">
                     <span>Estimated Total</span>
@@ -364,14 +367,24 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
             
             {/* Search items bar */}
             <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-900" />
               <input 
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search food, coffee or smoothies..."
-                className="w-full pl-10 pr-4 py-3 bg-white border border-neutral-150 rounded-xl text-sm placeholder-neutral-400 shadow-sm focus:border-amber-950 outline-none transition"
+                className="w-full pl-10 pr-9 py-3 bg-orange-50 hover:bg-white focus:bg-white text-neutral-900 border-2 border-amber-900/40 rounded-xl text-sm placeholder-neutral-500 shadow-sm focus:border-amber-950 outline-none font-bold transition"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full bg-neutral-200 hover:bg-neutral-300 text-neutral-800 transition"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Category tabs */}

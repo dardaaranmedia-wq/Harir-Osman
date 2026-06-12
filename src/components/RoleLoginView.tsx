@@ -178,7 +178,7 @@ export const RoleLoginView: React.FC = () => {
                 onClick={backspacePin}
                 className="h-14 text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-white flex items-center justify-center"
               >
-                Del
+                log
               </button>
             </div>
 

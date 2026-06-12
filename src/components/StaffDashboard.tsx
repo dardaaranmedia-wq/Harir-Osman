@@ -12,7 +12,7 @@ export const StaffDashboard: React.FC = () => {
   const { 
     currentUser, categories, products, tables, orders, settings, users,
     createOrder, approveOrder, rejectOrder, updateOrderItems, serveOrder, payOrder, logout,
-    theme, setTheme, updateOrderWaiter
+    theme, setTheme, updateOrderWaiter, updateOrderWithAuditTrail
   } = usePOS();
 
   // Screen modes: "order" (Create Order) or "queue" (Order Queue manager)
@@ -118,6 +118,7 @@ export const StaffDashboard: React.FC = () => {
   });
 
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editReason, setEditReason] = useState("");
   const [editNotes, setEditNotes] = useState<{ [id: string]: string }>({});
 
   // Settle Bill / Checkout Modal state variables
@@ -196,7 +197,7 @@ export const StaffDashboard: React.FC = () => {
     const updatedItems = editingOrder.items.map(it => {
       if (it.productId === prodId) {
         const next = it.quantity + delta;
-        return next > 0 ? { ...it, quantity: next } : it;
+        return { ...it, quantity: next };
       }
       return it;
     }).filter(it => it.quantity > 0);
@@ -209,9 +210,21 @@ export const StaffDashboard: React.FC = () => {
 
   const saveEditedOrder = () => {
     if (!editingOrder) return;
-    // Update local context
-    updateOrderItems(editingOrder.id, editingOrder.items, editingOrder.customerNotes);
+    
+    // Update local context with detailed auditing trace
+    updateOrderWithAuditTrail(
+      editingOrder.id,
+      editingOrder.items,
+      currentUser?.name || "Staff Cashier",
+      currentUser?.role || "Cashier",
+      0, // discount
+      0, // service charge
+      editReason ? editReason.trim() : "Items/Quantities adjusted prior approval",
+      editingOrder.customerNotes
+    );
+    
     setEditingOrder(null);
+    setEditReason("");
   };
 
   return (
@@ -247,21 +260,21 @@ export const StaffDashboard: React.FC = () => {
 
         {/* Universal Search Bar input container */}
         <div className="relative w-full md:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-200/55" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-900 font-extrabold" />
           <input
             type="text"
             value={globalSearchQuery}
             onChange={(e) => setGlobalSearchQuery(e.target.value)}
             placeholder="Search matching order #No, waitstaff, table ID or number..."
-            className="w-full text-xs pl-9 pr-8 py-2.5 rounded-xl bg-amber-900/30 text-amber-100 border border-amber-850 outline-none focus:outline-none focus:border-[#E5C158] focus:bg-amber-900/50 placeholder:text-amber-200/40 font-medium transition"
+            className="w-full text-xs pl-9 pr-8 py-2.5 rounded-xl bg-orange-50 hover:bg-white focus:bg-white text-neutral-900 placeholder:text-neutral-500 border-2 border-amber-800 outline-none focus:outline-none focus:border-amber-950 font-bold shadow-md transition"
           />
           {globalSearchQuery && (
             <button
               onClick={() => setGlobalSearchQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-amber-900/80 hover:bg-amber-800/80 hover:text-white text-amber-300"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-neutral-200 hover:bg-neutral-300 text-neutral-800 hover:text-neutral-950 transition"
               title="Clear search query"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -578,12 +591,12 @@ export const StaffDashboard: React.FC = () => {
                 >
                   <span>All Dishes</span>
                   <span className="text-[10px] bg-neutral-200/50 text-neutral-500 px-1.5 py-0.5 rounded-md font-extrabold">
-                    {products.filter(p=>!p.isArchived).length}
+                    {products.filter(p=>!p.isArchived && p.available).length}
                   </span>
                 </button>
 
                 {categories.map((cat) => {
-                  const count = products.filter(p => p.categoryId === cat.id && !p.isArchived).length;
+                  const count = products.filter(p => p.categoryId === cat.id && !p.isArchived && p.available).length;
                   return (
                     <button
                       key={cat.id}
@@ -608,19 +621,29 @@ export const StaffDashboard: React.FC = () => {
               {/* Product searches */}
               <div className="p-4 border-b border-neutral-150 flex items-center gap-3 bg-white shadow-xs">
                 <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-900" />
                   <input 
                     type="text"
                     value={productSearch}
                     onChange={(e) => setProductSearch(e.target.value)}
                     placeholder="Search dishes or active items..."
-                    className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-150/50 focus:bg-white border-0 outline-none focus:outline-1 focus:outline-amber-950 transition"
+                    className="w-full text-xs pl-9 pr-8 py-2.5 rounded-xl bg-orange-50 hover:bg-white focus:bg-white text-neutral-900 placeholder:text-neutral-500 border border-amber-900/40 outline-none focus:outline-none focus:ring-1 focus:ring-amber-950 focus:border-amber-950 font-bold transition"
                   />
+                  {productSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setProductSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-neutral-200 hover:bg-neutral-300 text-neutral-800"
+                      title="Clear product search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
                 
                 {/* Visual tables count indicator */}
                 <div className="text-xs font-medium text-neutral-500 ml-auto flex items-center gap-1.5">
-                  <span className="font-bold text-neutral-801">Default VAT Rate:</span>
+                  <span className="font-bold text-neutral-800">Default VAT Rate:</span>
                   <span className="bg-amber-50 text-amber-800 border border-amber-100 px-2 py-1 rounded font-black">
                     {settings.vatPercentage}%
                   </span>
@@ -630,9 +653,14 @@ export const StaffDashboard: React.FC = () => {
               {/* Items Grid */}
               <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {products
-                  .filter(p => !p.isArchived)
-                  .filter(p => orderCategory === "all" || p.categoryId === orderCategory)
-                  .filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()))
+                  .filter(p => !p.isArchived && p.available)
+                  .filter(p => productSearch ? true : (orderCategory === "all" || p.categoryId === orderCategory))
+                  .filter(p => {
+                    const matchesName = p.name.toLowerCase().includes(productSearch.toLowerCase());
+                    const cat = categories.find(c => c.id === p.categoryId);
+                    const matchesCategoryName = cat ? cat.name.toLowerCase().includes(productSearch.toLowerCase()) : false;
+                    return matchesName || matchesCategoryName;
+                  })
                   .map((p) => {
                     const matchesTray = trayItems.find(it => it.productId === p.id);
                     return (
@@ -671,7 +699,7 @@ export const StaffDashboard: React.FC = () => {
                           )}
                         </div>
                         <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
-                          <h4 className="text-xs font-black text-neutral-850 line-clamp-2 leading-tight">
+                          <h4 className="text-xs font-black text-neutral-900 line-clamp-2 leading-tight">
                             {p.name}
                           </h4>
                           <div className="flex items-center justify-between pt-2 border-t border-neutral-50">
@@ -769,7 +797,7 @@ export const StaffDashboard: React.FC = () => {
                           >
                             <Minus className="w-2.5 h-2.5" />
                           </button>
-                          <span className="text-xs font-extrabold text-neutral-805 w-3 text-center">{item.quantity}</span>
+                          <span className="text-xs font-extrabold text-neutral-800 w-3 text-center">{item.quantity}</span>
                           <button 
                             type="button"
                             onClick={() => updateTrayQty(item.productId, 1)}
@@ -791,11 +819,11 @@ export const StaffDashboard: React.FC = () => {
                   <div className="space-y-1.5 text-xs font-medium text-neutral-500">
                     <div className="flex justify-between">
                       <span>Subtotal</span>
-                      <span className="font-bold text-neutral-805">${traySubtotal.toFixed(2)}</span>
+                      <span className="font-bold text-neutral-800">${traySubtotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>VAT ({settings.vatPercentage}%)</span>
-                      <span className="font-bold text-neutral-850">${trayVat.toFixed(2)}</span>
+                      <span className="font-bold text-neutral-900">${trayVat.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-base font-black text-neutral-900 border-t border-neutral-200 pt-2">
                       <span>Grand Total</span>
@@ -940,7 +968,7 @@ export const StaffDashboard: React.FC = () => {
                           <span className="text-[10px] text-neutral-400 font-bold block">
                             ORDER REFS
                           </span>
-                          <h4 className="font-black text-sm text-neutral-850 flex items-center gap-1.5">
+                          <h4 className="font-black text-sm text-neutral-900 flex items-center gap-1.5">
                             {order.orderNumber}
                             <span className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-black px-2 py-0.5 rounded-full">
                               {order.tableName}
@@ -1306,19 +1334,27 @@ export const StaffDashboard: React.FC = () => {
                     <span className="text-[11px] text-neutral-500 font-bold">${it.price.toFixed(2)}</span>
                   </div>
                   
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <button 
                       onClick={() => updateEditQty(it.productId, -1)}
-                      className="w-6.5 h-6.5 rounded-full bg-white hover:bg-neutral-100 border border-neutral-300 flex items-center justify-center font-bold text-neutral-800"
+                      className="w-6 h-6 rounded-full bg-white hover:bg-neutral-100 border border-neutral-300 flex items-center justify-center font-bold text-neutral-800"
                     >
                       <Minus className="w-2.5 h-2.5" />
                     </button>
                     <span className="text-xs font-black w-4 text-center">{it.quantity}</span>
                     <button 
                       onClick={() => updateEditQty(it.productId, 1)}
-                      className="w-6.5 h-6.5 rounded-full bg-white hover:bg-neutral-100 border border-neutral-300 flex items-center justify-center font-bold text-neutral-800"
+                      className="w-6 h-6 rounded-full bg-white hover:bg-neutral-100 border border-neutral-300 flex items-center justify-center font-bold text-neutral-800"
                     >
                       <Plus className="w-2.5 h-2.5" />
+                    </button>
+                    <button 
+                      onClick={() => updateEditQty(it.productId, -it.quantity)}
+                      className="p-1 px-1.5 rounded-md hover:bg-red-50 text-red-500 transition-all font-bold text-[10px] flex items-center gap-0.5 ml-1"
+                      title="Remove from order"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Remove
                     </button>
                   </div>
                 </div>
@@ -1335,6 +1371,19 @@ export const StaffDashboard: React.FC = () => {
                 rows={2}
                 placeholder="Adjust general customer comments..."
                 className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-150 focus:border-amber-950 focus:bg-white rounded-xl outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                Reason for Editing (for Audit Trail log)
+              </label>
+              <input 
+                type="text"
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                placeholder="e.g. Guest changed mind, incorrect qty..."
+                className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-150 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-sans"
               />
             </div>
 

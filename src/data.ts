@@ -1,4 +1,12 @@
-import { Category, Product, Table, User, UserRole } from "./types";
+import { Category, Product, ProductionStation, Table, User, UserRole } from "./types";
+
+export const INITIAL_PRODUCTION_STATIONS: ProductionStation[] = [
+  { id: "station-kitchen", name: "Kitchen Station" },
+  { id: "station-bar", name: "Bar Station" },
+  { id: "station-coffee", name: "Coffee Station" },
+  { id: "station-juice", name: "Juice Station" },
+  { id: "station-dessert", name: "Dessert Station" },
+];
 
 export const INITIAL_CATEGORIES: Category[] = [
   { id: "cat-breakfast", name: "Breakfast", icon: "Egg" },
@@ -6,10 +14,7 @@ export const INITIAL_CATEGORIES: Category[] = [
   { id: "cat-pizza", name: "Pizza", icon: "Pizza" },
   { id: "cat-pasta", name: "Pasta", icon: "Soup" },
   { id: "cat-sandwiches", name: "Sandwiches", icon: "MenuSub" },
-  { id: "cat-salads", name: "Salads", icon: "Leaf" },
   { id: "cat-desserts", name: "Desserts", icon: "Cake" },
-  { id: "cat-hot", name: "Hot Drinks", icon: "Coffee" },
-  { id: "cat-cold", name: "Cold Drinks", icon: "CupSoda" },
   { id: "cat-juices", name: "Fresh Juices", icon: "GlassWater" },
   { id: "cat-smoothies", name: "Smoothies", icon: "Milk" },
 ];
@@ -115,17 +120,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     image: "https://images.unsplash.com/photo-1521390188846-e2a3a97453a0?auto=format&fit=crop&q=80&w=400",
   },
 
-  // Salads
-  {
-    id: "prod-salad-caesar",
-    name: "Greek Caesar Salad",
-    categoryId: "cat-salads",
-    price: 9.8,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1550304943-4f24f54ddde9?auto=format&fit=crop&q=80&w=400",
-  },
-
   // Desserts
   {
     id: "prod-lava-cake",
@@ -144,55 +138,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     available: true,
     isDrink: false,
     image: "https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&q=80&w=400",
-  },
-
-  // Hot Drinks
-  {
-    id: "prod-latte",
-    name: "Cafe Latte",
-    categoryId: "cat-hot",
-    price: 4.2,
-    available: true,
-    isDrink: true,
-    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400",
-  },
-  {
-    id: "prod-cappuccino",
-    name: "Cappuccino Special",
-    categoryId: "cat-hot",
-    price: 4.2,
-    available: true,
-    isDrink: true,
-    image: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&q=80&w=400",
-  },
-  {
-    id: "prod-flatwhite",
-    name: "Flat White",
-    categoryId: "cat-hot",
-    price: 4.5,
-    available: true,
-    isDrink: true,
-    image: "https://images.unsplash.com/photo-1577968897067-15e7c25f363e?auto=format&fit=crop&q=80&w=400",
-  },
-
-  // Cold Drinks
-  {
-    id: "prod-iced-latte",
-    name: "Iced Vanilla Latte",
-    categoryId: "cat-cold",
-    price: 4.8,
-    available: true,
-    isDrink: true,
-    image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?auto=format&fit=crop&q=80&w=400",
-  },
-  {
-    id: "prod-iced-matcha",
-    name: "Iced Matcha Espresso Fusion",
-    categoryId: "cat-cold",
-    price: 5.2,
-    available: true,
-    isDrink: true,
-    image: "https://images.unsplash.com/photo-1536256263959-770b48d82b0a?auto=format&fit=crop&q=80&w=400",
   },
 
   // Juices
