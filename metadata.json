@@ -1,0 +1,6 @@
+{
+  "name": "Luna Cafe POS",
+  "description": "A modern and user-friendly Point of Sale system for Luna Cafe featuring PIN logins, multi-role dashboards, live QR-code self-ordering, interactive kitchen queues, thermal receipt printing, and comprehensive sales analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

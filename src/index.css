@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;750&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-gold-50: #FEFDF6;
+  --color-gold-100: #FDF9EA;
+  --color-gold-400: #F2DA88;
+  --color-gold-500: #E5C158;
+  --color-gold-600: #D4AF37;
+  --color-gold-700: #B28926;
+  --color-gold-950: #332608;
+}
+
+/* Print optimizations */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Custom scrollbar behaviors */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(12, 10, 9, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #E5C158;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #D4AF37;
+}
+
+html, body {
+  scrollbar-color: #E5C158 rgba(12, 10, 9, 0.5);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+:root.theme-light body {
+  background-color: #FAF8F5;
+  color: #1C1917;
+}
+
+:root.theme-dark body {
+  background-color: #12100F;
+  color: #FAFAF9;
+}
+
+:root.theme-white body {
+  background-color: #FFFFFF;
+  color: #000000;
+}
