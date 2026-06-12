@@ -225,6 +225,16 @@ export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
       </div>
     </div>
 
+    <div class="center bold" style="margin-top: 8px; font-size: ${paper === "58mm" ? "9px" : "11px"}; tracking-wide: 0.5px;">MOBILE MONEY ACCOUNTS</div>
+    <div style="border: 1px dashed #000; border-radius: 4px; padding: 4px 6px; margin: 4px 0 8px 0; font-size: ${paper === "58mm" ? "9px" : "11px"}; line-height: 1.3;">
+      <div class="row"><b>Zaad</b><b>480495</b></div>
+      <div class="row"><b>Sahal</b><b>319347</b></div>
+      <div class="row"><b>eDahab</b><b>759816</b></div>
+      <div class="row"><b>MyCash</b><b>951993</b></div>
+      <div class="row"><b>TPlus</b><b>871056</b></div>
+      <p style="margin: 4px 0 0 0; font-size: ${paper === "58mm" ? "7.5px" : "9px"}; text-align: center; font-weight: normal; font-style: italic;">Pay using one of the accounts above, then show staff receipt ID.</p>
+    </div>
+
     <div class="footer">THANK YOU — COME AGAIN</div>
   `;
 
@@ -426,6 +436,15 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
         <div class="row"><span>VAT/Tax</span><b>${money(order.vatAmount)}</b></div>
         <div class="total-box">
           <div class="total-row"><span>TOTAL</span><span>${money(order.grandTotal)}</span></div>
+        </div>
+        <div class="center bold" style="margin-top: 8px; font-size: ${paperWidth === "58mm" ? "9px" : "11px"}; tracking-wide: 0.5px;">MOBILE MONEY ACCOUNTS</div>
+        <div style="border: 1px dashed #000; border-radius: 4px; padding: 4px 6px; margin: 4px 0 8px 0; font-size: ${paperWidth === "58mm" ? "9px" : "11px"}; line-height: 1.3;">
+          <div class="row"><b>Zaad</b><b>480495</b></div>
+          <div class="row"><b>Sahal</b><b>319347</b></div>
+          <div class="row"><b>eDahab</b><b>759816</b></div>
+          <div class="row"><b>MyCash</b><b>951993</b></div>
+          <div class="row"><b>TPlus</b><b>871056</b></div>
+          <p style="margin: 4px 0 0 0; font-size: ${paperWidth === "58mm" ? "7.5px" : "9px"}; text-align: center; font-weight: normal; font-style: italic;">Pay using one of the accounts above, then show staff receipt ID.</p>
         </div>
         <div class="footer">${settings.welcomeMessage || "THANK YOU — COME AGAIN"}</div>
       `;
@@ -720,6 +739,30 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
                     )}
                   </div>
                 )}
+                <div className="mt-2.5 p-2 bg-neutral-50 border border-dotted border-neutral-400 rounded-lg space-y-1 text-[8px] text-black">
+                  <div className="font-black text-center text-neutral-900 tracking-wider">MOBILE MONEY ACCOUNTS</div>
+                  <div className="flex justify-between font-bold">
+                    <span>Zaad</span>
+                    <span className="font-mono font-black">480495</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>Sahal</span>
+                    <span className="font-mono font-black">319347</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>eDahab</span>
+                    <span className="font-mono font-black">759816</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>MyCash</span>
+                    <span className="font-mono font-black">951993</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>TPlus</span>
+                    <span className="font-mono font-black">871056</span>
+                  </div>
+                  <p className="text-[6.5px] mt-1 text-center font-medium italic text-neutral-500">Pay using one of the accounts above, then show staff receipt ID.</p>
+                </div>
               </div>
             ) : (
               <div className="pt-1 border-t border-dashed border-black text-center text-[8px] font-black uppercase tracking-widest text-neutral-800">
@@ -1039,40 +1082,5 @@ function printHtml(html: string) {
     win.focus();
     win.print();
     win.close();
-  };const paymentAccountsHtml = `
-<div class="payment-box">
-    <div class="payment-title">MOBILE MONEY ACCOUNTS</div>
-
-    <div class="payment-row">
-        <span>Zaad</span>
-        <span>480495</span>
-    </div>
-
-    <div class="payment-row">
-        <span>Sahal</span>
-        <span>319347</span>
-    </div>
-
-    <div class="payment-row">
-        <span>eDahab</span>
-        <span>759816</span>
-    </div>
-
-    <div class="payment-row">
-        <span>MyCash</span>
-        <span>951993</span>
-    </div>
-
-    <div class="payment-row">
-        <span>TPlus</span>
-        <span>871056</span>
-    </div>
-
-    <div class="payment-note">
-        Pay using one of the accounts above, then show staff your receipt ID.
-    </div>
-</div>
-`;
-
-receiptHtml += paymentAccountsHtml;
+  };
 }

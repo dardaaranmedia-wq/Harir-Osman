@@ -120,6 +120,8 @@ export const StaffDashboard: React.FC = () => {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [editReason, setEditReason] = useState("");
   const [editNotes, setEditNotes] = useState<{ [id: string]: string }>({});
+  const [editProductSearch, setEditProductSearch] = useState("");
+  const [editCategoryFilter, setEditCategoryFilter] = useState("all");
 
   // Settle Bill / Checkout Modal state variables
   const [paymentActiveOrder, setPaymentActiveOrder] = useState<Order | null>(null);
@@ -190,6 +192,8 @@ export const StaffDashboard: React.FC = () => {
       initialNotes[it.productId] = it.notes || "";
     });
     setEditNotes(initialNotes);
+    setEditProductSearch("");
+    setEditCategoryFilter("all");
   };
 
   const updateEditQty = (prodId: string, delta: number) => {
@@ -206,6 +210,29 @@ export const StaffDashboard: React.FC = () => {
       ...editingOrder,
       items: updatedItems
     });
+  };
+
+  const addEditProduct = (prod: Product) => {
+    if (!editingOrder) return;
+    const existingItem = editingOrder.items.find(it => it.productId === prod.id);
+    if (existingItem) {
+      updateEditQty(prod.id, 1);
+    } else {
+      setEditingOrder({
+        ...editingOrder,
+        items: [
+          ...editingOrder.items,
+          {
+            productId: prod.id,
+            name: prod.name,
+            price: prod.price,
+            quantity: 1,
+            isDrink: prod.isDrink,
+            stationId: prod.stationId || (prod.isDrink ? "station-bar" : "station-kitchen")
+          }
+        ]
+      });
+    }
   };
 
   const saveEditedOrder = () => {
@@ -1041,34 +1068,42 @@ export const StaffDashboard: React.FC = () => {
 
                         {order.status === OrderStatus.NEW && (
                           /* Serving actions */
-                          <div className="grid grid-cols-3 gap-2">
-                            <button 
-                              onClick={() => { setPrintingOrder(order); setReceiptType("kitchen"); }}
-                              className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
-                              title="Print Kitchen duplicate"
-                            >
-                              <Flame className="w-3.5 h-3.5 text-orange-500" />
-                              Kitchen
-                            </button>
-                            
-                            <button 
-                              onClick={() => { setPrintingOrder(order); setReceiptType("barista"); }}
-                              className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
-                              title="Print Barista duplicate"
-                            >
-                              <Cup className="w-3.5 h-3.5 text-blue-500" />
-                              Barista
-                            </button>
+                          <div className="space-y-2 w-full">
+                            <div className="grid grid-cols-3 gap-2">
+                              <button 
+                                onClick={() => { setPrintingOrder(order); setReceiptType("kitchen"); }}
+                                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
+                                title="Print Kitchen duplicate"
+                              >
+                                <Flame className="w-3.5 h-3.5 text-orange-500" />
+                                Kitchen
+                              </button>
+                              
+                              <button 
+                                onClick={() => { setPrintingOrder(order); setReceiptType("barista"); }}
+                                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
+                                title="Print Barista duplicate"
+                              >
+                                <Cup className="w-3.5 h-3.5 text-blue-500" />
+                                Barista
+                              </button>
 
+                              <button 
+                                onClick={() => {
+                                  setServingOrderWithOptions(order);
+                                  setPrintKitchenChecked(true);
+                                  setPrintBaristaChecked(true);
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
+                              >
+                                Mark Served
+                              </button>
+                            </div>
                             <button 
-                              onClick={() => {
-                                setServingOrderWithOptions(order);
-                                setPrintKitchenChecked(true);
-                                setPrintBaristaChecked(true);
-                              }}
-                              className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
+                              onClick={() => startEditingPending(order)}
+                              className="w-full bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg transition shadow-xs text-center flex items-center justify-center gap-1"
                             >
-                              Mark Served
+                              Edit / Change Items
                             </button>
                           </div>
                         )}
@@ -1076,14 +1111,20 @@ export const StaffDashboard: React.FC = () => {
                         {order.status === OrderStatus.SERVED && (
                           /* Print invoice & Cashed out actions */
                           <div className="space-y-2">
-                            <div className="flex gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                               {/* Open customer printer modal directly */}
                               <button 
                                 onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
-                                className="flex-1 bg-white hover:bg-neutral-50 border border-neutral-250 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
+                                className="bg-white hover:bg-neutral-50 border border-neutral-250 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
                               >
                                 <Printer className="w-3.5 h-3.5" />
-                                View & Print Bill Info
+                                View Bill Info
+                              </button>
+                              <button 
+                                onClick={() => startEditingPending(order)}
+                                className="bg-white hover:bg-neutral-50 border border-neutral-250 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
+                              >
+                                Edit Items
                               </button>
                             </div>
                             
@@ -1104,12 +1145,20 @@ export const StaffDashboard: React.FC = () => {
                             <div>Checked out by Cashier: <b className="text-neutral-800">{order.cashierName || "Siti"}</b></div>
                             <div>Paid Category: <b className="text-neutral-800">{order.paymentMethod || "Cash"}</b></div>
                             <div>Checkout Time: <b className="text-neutral-800">{new Date(order.updatedAt).toLocaleTimeString()}</b></div>
-                            <button 
-                              onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
-                              className="w-full text-blue-600 hover:underline hover:bg-blue-50/50 block py-1.5 mt-2 rounded font-extrabold text-center uppercase border border-blue-100"
-                            >
-                              Reprint customer bill
-                            </button>
+                            <div className="grid grid-cols-2 gap-2 mt-2">
+                              <button 
+                                onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
+                                className="text-blue-600 hover:underline hover:bg-blue-50/50 block py-1.5 rounded font-extrabold text-center uppercase border border-blue-100 text-[10px]"
+                              >
+                                Reprint Bill
+                              </button>
+                              <button 
+                                onClick={() => startEditingPending(order)}
+                                className="text-neutral-600 hover:bg-neutral-105 block py-1.5 rounded font-extrabold text-center uppercase border border-neutral-250 text-[10px]"
+                              >
+                                Edit Items
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1310,97 +1359,320 @@ export const StaffDashboard: React.FC = () => {
 
       {/* Editing dialog modal (For cashiers to customize Pending QR Orders prior approval) */}
       {editingOrder && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-4">
-            <button 
-              onClick={() => setEditingOrder(null)}
-              className="absolute top-4 right-4 p-1 rounded-full text-neutral-400 hover:text-black hover:bg-neutral-100 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div>
-              <h2 className="text-lg font-black text-neutral-900">Edit QR Self-Order</h2>
-              <p className="text-xs text-neutral-500 mt-1">
-                Table: {editingOrder.tableName}. Ref: {editingOrder.orderNumber}
-              </p>
-            </div>
-
-            <div className="max-h-64 overflow-y-auto space-y-3 p-1">
-              {editingOrder.items.map((it, index) => (
-                <div key={index} className="bg-neutral-50 p-3 rounded-xl flex items-center justify-between border border-neutral-200/50">
-                  <div className="space-y-0.5">
-                    <h4 className="text-xs font-black text-neutral-800">{it.name}</h4>
-                    <span className="text-[11px] text-neutral-500 font-bold">${it.price.toFixed(2)}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => updateEditQty(it.productId, -1)}
-                      className="w-6 h-6 rounded-full bg-white hover:bg-neutral-100 border border-neutral-300 flex items-center justify-center font-bold text-neutral-800"
-                    >
-                      <Minus className="w-2.5 h-2.5" />
-                    </button>
-                    <span className="text-xs font-black w-4 text-center">{it.quantity}</span>
-                    <button 
-                      onClick={() => updateEditQty(it.productId, 1)}
-                      className="w-6 h-6 rounded-full bg-white hover:bg-neutral-100 border border-neutral-300 flex items-center justify-center font-bold text-neutral-800"
-                    >
-                      <Plus className="w-2.5 h-2.5" />
-                    </button>
-                    <button 
-                      onClick={() => updateEditQty(it.productId, -it.quantity)}
-                      className="p-1 px-1.5 rounded-md hover:bg-red-50 text-red-500 transition-all font-bold text-[10px] flex items-center gap-0.5 ml-1"
-                      title="Remove from order"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Remove
-                    </button>
-                  </div>
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-2 md:p-4">
+          <div className="bg-white rounded-3xl shadow-2xl relative w-full max-w-5xl max-h-[95vh] md:max-h-[90vh] flex flex-col overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="p-4 md:p-5 border-b border-neutral-100 flex items-center justify-between shrink-0 bg-neutral-50/50">
+              <div>
+                <h2 className="text-base md:text-lg font-black text-neutral-900 flex items-center gap-2">
+                  <span className="p-1.5 rounded-lg bg-amber-50 text-amber-950">
+                    <FileText className="w-4 h-4 md:w-5 md:h-5" />
+                  </span>
+                  Edit / Adjust Order Items
+                </h2>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] md:text-xs">
+                  <span className="text-neutral-500 font-bold">
+                    Ref: <span className="text-neutral-900 font-extrabold">{editingOrder.orderNumber}</span>
+                  </span>
+                  <span className="text-neutral-500 font-bold">
+                    Table: <span className="text-neutral-900 font-extrabold">{editingOrder.tableName}</span>
+                  </span>
+                  <span className="text-neutral-500 font-bold flex items-center gap-1">
+                    Status: <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-[9px] uppercase">{editingOrder.status}</span>
+                  </span>
                 </div>
-              ))}
-            </div>
-
-            <div className="space-y-1.5 pt-2">
-              <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                Edit Chef Instructions
-              </label>
-              <textarea 
-                value={editingOrder.customerNotes || ""}
-                onChange={(e) => setEditingOrder({ ...editingOrder, customerNotes: e.target.value })}
-                rows={2}
-                placeholder="Adjust general customer comments..."
-                className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-150 focus:border-amber-950 focus:bg-white rounded-xl outline-none"
-              />
-            </div>
-
-            <div className="space-y-1.5 pt-1">
-              <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                Reason for Editing (for Audit Trail log)
-              </label>
-              <input 
-                type="text"
-                value={editReason}
-                onChange={(e) => setEditReason(e.target.value)}
-                placeholder="e.g. Guest changed mind, incorrect qty..."
-                className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-150 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-sans"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2">
+              </div>
               <button 
                 onClick={() => setEditingOrder(null)}
-                className="py-3 bg-neutral-100 font-bold rounded-xl text-neutral-600 hover:bg-neutral-250 transition"
+                className="p-2 rounded-full text-neutral-400 hover:text-black hover:bg-neutral-100 transition cursor-pointer"
               >
-                Cancel
-              </button>
-              <button 
-                onClick={saveEditedOrder}
-                className="py-3 bg-amber-950 font-bold rounded-xl text-white hover:bg-amber-900 transition flex items-center justify-center gap-1.5"
-              >
-                Save updates
+                <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Split Content Body */}
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+              
+              {/* Left Column: Current Order Items, Chef Notes, Change Reason & Save Actions */}
+              <div className="w-full md:w-[42%] border-b md:border-b-0 md:border-r border-neutral-100 p-4 md:p-5 flex flex-col overflow-hidden justify-between bg-white min-h-0">
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                  <div>
+                    <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1.5">
+                      Current Order List ({editingOrder.items.reduce((acc, current) => acc + current.quantity, 0)} items)
+                    </span>
+                    {editingOrder.items.length === 0 ? (
+                      <div className="bg-neutral-50 border border-dashed border-neutral-200/60 rounded-2xl p-6 text-center text-neutral-400">
+                        <ShoppingCart className="w-7 h-7 mx-auto mb-2 opacity-30 text-neutral-500" />
+                        <p className="text-xs font-bold">Order list is empty</p>
+                        <p className="text-[10px] mt-0.5 text-neutral-400">Select items on the right list to add them.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {editingOrder.items.map((it, idx) => (
+                          <div key={idx} className="bg-neutral-50 p-3 rounded-xl flex items-center justify-between border border-neutral-200/50 hover:bg-neutral-100/50 transition">
+                            <div className="space-y-0.5 flex-1 pr-2">
+                              <h4 className="text-xs font-black text-neutral-800 leading-tight">{it.name}</h4>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-extrabold text-amber-950">${(it.price * it.quantity).toFixed(2)}</span>
+                                <span className="text-[10px] text-neutral-400 font-medium">${it.price.toFixed(2)} each</span>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button 
+                                type="button"
+                                onClick={() => updateEditQty(it.productId, -1)}
+                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
+                              >
+                                <Minus className="w-3 h-3 text-neutral-600" />
+                              </button>
+                              
+                              <span className="text-xs font-black w-5 text-center select-none text-neutral-800">{it.quantity}</span>
+                              
+                              <button 
+                                type="button"
+                                onClick={() => updateEditQty(it.productId, 1)}
+                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3 text-neutral-600" />
+                              </button>
+                              
+                              <button 
+                                type="button"
+                                onClick={() => updateEditQty(it.productId, -it.quantity)}
+                                className="ml-1 p-1 hover:bg-red-50 text-red-500 rounded-md transition cursor-pointer"
+                                title="Remove item"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pricing Overview Summary */}
+                  {editingOrder.items.length > 0 && (
+                    <div className="bg-amber-50/40 border border-amber-900/5 rounded-xl p-3 space-y-1.5 text-xs text-neutral-600">
+                      <div className="flex justify-between font-medium">
+                        <span>Subtotal</span>
+                        <span className="font-extrabold text-neutral-800">
+                          ${editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between font-medium">
+                        <span>VAT (${((editingOrder.vatRate ?? settings.vatPercentage / 100) * 100).toFixed(0)}%)</span>
+                        <span className="font-extrabold text-neutral-800">
+                          ${(editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0) * (editingOrder.vatRate ?? settings.vatPercentage / 100)).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-t border-neutral-200/50 pt-2 text-xs font-black text-neutral-900 uppercase tracking-wide">
+                        <span>Estimated Total</span>
+                        <span className="text-amber-950 font-extrabold text-sm">
+                          ${(
+                            editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0) * 
+                            (1 + (editingOrder.vatRate ?? settings.vatPercentage / 100))
+                          ).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Chef Notes / Table Instruction */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                      Edit Chef Instructions
+                    </label>
+                    <textarea 
+                      value={editingOrder.customerNotes || ""}
+                      onChange={(e) => setEditingOrder({ ...editingOrder, customerNotes: e.target.value })}
+                      rows={2}
+                      placeholder="e.g. Extra hot, milk on the side..."
+                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition"
+                    />
+                  </div>
+
+                  {/* Reason for Editing (for Audit Logs) */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                      Reason for Editing
+                    </label>
+                    <input 
+                      type="text"
+                      value={editReason}
+                      onChange={(e) => setEditReason(e.target.value)}
+                      placeholder="e.g. Order changed, incorrect item..."
+                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition font-sans"
+                    />
+                  </div>
+                </div>
+
+                {/* Left Pane Action Footer */}
+                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100 shrink-0 mt-3 md:mt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setEditingOrder(null)}
+                    className="py-2.5 bg-neutral-100 hover:bg-neutral-200 font-extrabold rounded-xl text-neutral-600 transition cursor-pointer text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={saveEditedOrder}
+                    disabled={editingOrder.items.length === 0}
+                    className="py-2.5 bg-amber-950 hover:bg-amber-900 font-extrabold rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer text-xs uppercase"
+                  >
+                    Save updates
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Column: Dynamic Visual Product Menu Picker */}
+              <div className="flex-1 bg-neutral-50 p-4 md:p-5 flex flex-col overflow-hidden min-h-0">
+                
+                {/* Search Bar & Categories Tabs */}
+                <div className="shrink-0 space-y-3 mb-4">
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                    <input 
+                      type="text"
+                      value={editProductSearch}
+                      onChange={(e) => setEditProductSearch(e.target.value)}
+                      placeholder="Search to add products..."
+                      className="w-full text-xs pl-10 pr-9 py-2.5 rounded-xl bg-white text-neutral-900 placeholder:text-neutral-400 border border-neutral-200 outline-none focus:ring-1 focus:ring-amber-950 focus:border-amber-950 font-bold shadow-xs transition"
+                    />
+                    {editProductSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setEditProductSearch("")}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600"
+                        title="Clear search"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Categories Horizontally Scrollable Pills */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                    <button
+                      type="button"
+                      onClick={() => setEditCategoryFilter("all")}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] md:text-[11px] font-black tracking-wider whitespace-nowrap transition cursor-pointer ${
+                        editCategoryFilter === "all" 
+                          ? "bg-amber-950 text-white shadow-xs" 
+                          : "bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200/50"
+                      }`}
+                    >
+                      ALL ITEMS
+                    </button>
+                    {categories.map(cat => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setEditCategoryFilter(cat.id);
+                          setEditProductSearch("");
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] md:text-[11px] font-black tracking-wider whitespace-nowrap transition flex items-center gap-1 cursor-pointer ${
+                          editCategoryFilter === cat.id 
+                            ? "bg-amber-950 text-white shadow-xs" 
+                            : "bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200/50"
+                        }`}
+                      >
+                        <span>{cat.name.toUpperCase()}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Items Grid View */}
+                <div className="flex-1 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {products
+                      .filter(p => !p.isArchived && p.available)
+                      .filter(p => editProductSearch ? true : (editCategoryFilter === "all" || p.categoryId === editCategoryFilter))
+                      .filter(p => {
+                        const matchesName = p.name.toLowerCase().includes(editProductSearch.toLowerCase());
+                        const cat = categories.find(c => c.id === p.categoryId);
+                        const matchesCategoryName = cat ? cat.name.toLowerCase().includes(editProductSearch.toLowerCase()) : false;
+                        return matchesName || matchesCategoryName;
+                      })
+                      .map(p => {
+                        const countInEdit = editingOrder.items.find(it => it.productId === p.id)?.quantity || 0;
+                        return (
+                          <div 
+                            key={p.id}
+                            onClick={() => addEditProduct(p)}
+                            className={`bg-white border text-left rounded-2xl overflow-hidden shadow-xs hover:shadow-md hover:border-amber-900/50 cursor-pointer active:scale-97 transition flex flex-col group relative ${
+                              countInEdit > 0 ? "border-amber-950 ring-1 ring-amber-950" : "border-neutral-200/80"
+                            }`}
+                          >
+                            <div className="h-20 bg-neutral-100 relative overflow-hidden shrink-0">
+                              <img 
+                                src={p.image} 
+                                alt={p.name}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400`;
+                                }}
+                              />
+                              <div className="absolute top-1 right-1 flex flex-col gap-1 items-end">
+                                {p.isDrink ? (
+                                  <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-xs border border-neutral-100/30 rounded-md text-[8px] font-black text-amber-800 uppercase">
+                                    Drink
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-xs border border-neutral-100/30 rounded-md text-[8px] font-black text-emerald-800 uppercase">
+                                    Food
+                                  </span>
+                                )}
+                              </div>
+                              {countInEdit > 0 && (
+                                <div className="absolute inset-0 bg-black/10 flex items-center justify-center animate-fade-in">
+                                  <span className="bg-amber-950 text-white font-extrabold text-xs w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 border-white scale-110">
+                                    {countInEdit}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="p-2.5 flex-1 flex flex-col justify-between space-y-1.5">
+                              <h4 className="text-[11px] font-black text-neutral-800 line-clamp-2 leading-tight">
+                                {p.name}
+                              </h4>
+                              <div className="flex items-center justify-between pt-1.5 border-t border-neutral-100">
+                                <span className="text-xs font-black text-neutral-900">${p.price.toFixed(2)}</span>
+                                <span className="text-[9px] bg-neutral-100 text-neutral-700 font-extrabold px-1.5 py-0.5 rounded-md group-hover:bg-amber-950 group-hover:text-white transition uppercase">
+                                  + Add
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                  {products
+                    .filter(p => !p.isArchived && p.available)
+                    .filter(p => editProductSearch ? true : (editCategoryFilter === "all" || p.categoryId === editCategoryFilter))
+                    .filter(p => {
+                      const matchesName = p.name.toLowerCase().includes(editProductSearch.toLowerCase());
+                      const cat = categories.find(c => c.id === p.categoryId);
+                      const matchesCategoryName = cat ? cat.name.toLowerCase().includes(editProductSearch.toLowerCase()) : false;
+                      return matchesName || matchesCategoryName;
+                    }).length === 0 && (
+                      <div className="text-center py-10 text-neutral-400 text-xs">
+                        No available menu items match the active filters.
+                      </div>
+                  )}
+                </div>
+
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}
