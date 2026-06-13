@@ -7,7 +7,7 @@ export type PrintItem = {
   name: string;
   qty: number;
   price?: number;
-  station?: "kitchen" | "bar" | "bill" | string;
+  station?: "kitchen" | "bar" | "bill";
   note?: string;
 };
 
@@ -96,22 +96,26 @@ function baseHtml(title: string, body: string, paper: "58mm" | "80mm" = "80mm") 
     gap: 4px;
   }
 
-  .item-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 4px;
-    font-size: ${paper === "58mm" ? "10px" : "12px"};
+  .item-row {
+    display: grid;
+    grid-template-columns: 1fr 24px 48px;
+    gap: 4px;
+    margin: 2px 0;
   }
 
-  .item-table th {
-    border-bottom: 2px dashed #005;
-    text-align: left;
-    padding-bottom: 2px;
+  .item-name {
+    font-weight: 800;
+    word-break: break-word;
   }
 
-  .item-table td {
-    padding: 4px 0;
-    border-bottom: 1px dotted #aaa;
+  .qty {
+    text-align: center;
+    font-weight: 900;
+  }
+
+  .price {
+    text-align: right;
+    font-weight: 800;
   }
 
   .total-box {
@@ -168,9 +172,12 @@ ${body}
 
 function openPrintWindow(html: string) {
   const printWindow = window.open("", "_blank", "width=420,height=600");
+
   if (!printWindow) {
+    alert("Printer popup blocked. Please allow popups for this POS system.");
     return;
   }
+
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
@@ -193,32 +200,17 @@ export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
 
     <div class="section-title">ITEMS</div>
 
-    <table class="item-table">
-      <thead>
-        <tr>
-          <th>ITEM DETAILS</th>
-          <th style="text-align: right">TOTAL</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${order.items
-          .map(
-            item => `
-          <tr>
-            <td>
-              <div class="bold">${item.name}</div>
-              <div style="font-size: 10px; color: #555;">${item.qty} x ${money(item.price)}</div>
-              ${item.note ? `<div style="font-size: 9px; font-style: italic;">* Note: ${item.note}</div>` : ""}
-            </td>
-            <td style="text-align: right; font-weight: 900;">
-              ${money((item.price || 0) * item.qty)}
-            </td>
-          </tr>
-        `
-          )
-          .join("")}
-      </tbody>
-    </table>
+    ${order.items
+      .map(
+        item => `
+        <div class="item-row">
+          <div class="item-name">${item.name}</div>
+          <div class="qty">x${item.qty}</div>
+          <div class="price">${money((item.price || 0) * item.qty)}</div>
+        </div>
+      `
+      )
+      .join("")}
 
     <div class="section-title">PAYMENT SUMMARY</div>
 
@@ -233,13 +225,14 @@ export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
       </div>
     </div>
 
-    <div class="center bold" style="margin-top: 8px; font-size: ${paper === "58mm" ? "9px" : "11px"};">MOBILE MONEY ACCOUNTS</div>
+    <div class="center bold" style="margin-top: 8px; font-size: ${paper === "58mm" ? "9px" : "11px"}; tracking-wide: 0.5px;">MOBILE MONEY ACCOUNTS</div>
     <div style="border: 1px dashed #000; border-radius: 4px; padding: 4px 6px; margin: 4px 0 8px 0; font-size: ${paper === "58mm" ? "9px" : "11px"}; line-height: 1.3;">
       <div class="row"><b>Zaad</b><b>480495</b></div>
       <div class="row"><b>Sahal</b><b>319347</b></div>
       <div class="row"><b>eDahab</b><b>759816</b></div>
       <div class="row"><b>MyCash</b><b>951993</b></div>
       <div class="row"><b>TPlus</b><b>871056</b></div>
+      <p style="margin: 4px 0 0 0; font-size: ${paper === "58mm" ? "7.5px" : "9px"}; text-align: center; font-weight: normal; font-style: italic;">Pay using one of the accounts above, then show staff receipt ID.</p>
     </div>
 
     <div class="footer">THANK YOU — COME AGAIN</div>
@@ -249,6 +242,10 @@ export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
 }
 
 export function printKitchen(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
+  const kitchenItems = order.items.filter(
+    item => item.station === "kitchen" || !item.station
+  );
+
   const body = `
     <div class="receipt-title">KITCHEN ORDER</div>
 
@@ -259,7 +256,7 @@ export function printKitchen(order: PrintOrder, paper: "58mm" | "80mm" = "80mm")
 
     <div class="section-title">KITCHEN ITEMS</div>
 
-    ${order.items
+    ${kitchenItems
       .map(
         item => `
         <div class="station-item">
@@ -278,6 +275,8 @@ export function printKitchen(order: PrintOrder, paper: "58mm" | "80mm" = "80mm")
 }
 
 export function printBar(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
+  const barItems = order.items.filter(item => item.station === "bar");
+
   const body = `
     <div class="receipt-title">BAR ORDER</div>
 
@@ -288,7 +287,7 @@ export function printBar(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
 
     <div class="section-title">BAR ITEMS</div>
 
-    ${order.items
+    ${barItems
       .map(
         item => `
         <div class="station-item">
@@ -306,6 +305,50 @@ export function printBar(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
   openPrintWindow(baseHtml("Bar Print", body, paper));
 }
 
+function mapOrderToPrintOrder(order: Order): PrintOrder {
+  return {
+    orderNo: order.orderNumber,
+    table: order.tableName,
+    waiter: order.waiterName || "-",
+    cashier: order.cashierName || "-",
+    createdAt: order.createdAt 
+      ? new Date(order.createdAt).toLocaleString() 
+      : new Date().toLocaleString(),
+    items: order.items.map(item => {
+      let itemStation: "kitchen" | "bar" | "bill" | undefined;
+      const nameLower = (item.name || "").toLowerCase();
+      if (
+        nameLower.includes("coffee") || 
+        nameLower.includes("latte") || 
+        nameLower.includes("cappuccino") || 
+        nameLower.includes("espresso") || 
+        nameLower.includes("macchiato") || 
+        nameLower.includes("matcha") || 
+        nameLower.includes("mocha") || 
+        nameLower.includes("tea") || 
+        nameLower.includes("americano") ||
+        nameLower.includes("cold brew") ||
+        item.isDrink
+      ) {
+        itemStation = "bar";
+      } else {
+        itemStation = "kitchen";
+      }
+      return {
+        name: item.name,
+        qty: item.quantity,
+        price: item.price,
+        station: itemStation,
+        note: item.notes
+      };
+    }),
+    subtotal: order.subtotal,
+    discount: order.discountAmount || 0,
+    tax: order.vatAmount || 0,
+    total: order.grandTotal
+  };
+}
+
 interface ReceiptProps {
   order: Order;
   settings: SystemSettings;
@@ -314,14 +357,12 @@ interface ReceiptProps {
 }
 
 export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onClose }) => {
-  const { updateOrderPrintedQty } = usePOS();
   const [copied, setCopied] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [customerEmail, setCustomerEmail] = useState("");
   const [emailSending, setEmailSending] = useState(false);
   const [emailSentSuccess, setEmailSentSuccess] = useState(false);
   const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
-  const [newOnlyMode, setNewOnlyMode] = useState(true); // Default to true (printing only added items)
 
   useEffect(() => {
     if (settings && settings.printerPaperWidth) {
@@ -334,15 +375,6 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
     if (type === "barista") return "bar";
     return "kitchen";
   });
-
-  // Automatically switch new-only mode based on station
-  useEffect(() => {
-    if (selectedStation === "bill") {
-      setNewOnlyMode(false); // Customer bill always full!
-    } else {
-      setNewOnlyMode(true);  // Kitchen/Bar delta only from the first print by default
-    }
-  }, [selectedStation]);
 
   const displayItems = order.items.filter(item => {
     if (selectedStation === "bill") return true;
@@ -361,44 +393,10 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
 
     if (selectedStation === "bar") return isDrink;
     return !isDrink;
-  }).map(item => {
-    const alreadyPrinted = order.printedQty?.[item.productId] || 0;
-    const displayQty = newOnlyMode && selectedStation !== "bill" 
-      ? Math.max(0, item.quantity - alreadyPrinted) 
-      : item.quantity;
-    
-    return {
-      ...item,
-      displayQty,
-      totalQty: item.quantity,
-      alreadyPrinted
-    };
-  }).filter(item => item.displayQty > 0 || !newOnlyMode);
+  });
 
   const handlePrint = () => {
-    const printItems = displayItems.map(item => ({
-      name: item.name,
-      qty: item.displayQty,
-      price: item.price,
-      station: selectedStation,
-      note: item.notes
-    }));
-
-    const printOrder: PrintOrder = {
-      orderNo: order.orderNumber,
-      table: order.tableName,
-      waiter: order.waiterName || "-",
-      cashier: order.cashierName || "-",
-      createdAt: order.createdAt 
-        ? new Date(order.createdAt).toLocaleString() 
-        : new Date().toLocaleString(),
-      items: printItems,
-      subtotal: order.subtotal,
-      discount: order.discountAmount || 0,
-      tax: order.vatAmount || 0,
-      total: order.grandTotal
-    };
-
+    const printOrder = mapOrderToPrintOrder(order);
     if (selectedStation === "bill") {
       printBill(printOrder, paperWidth);
     } else if (selectedStation === "kitchen") {
@@ -406,19 +404,11 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
     } else {
       printBar(printOrder, paperWidth);
     }
-
-    // Persist printed quantity tracking to Firestore
-    if (selectedStation !== "bill") {
-      const nextPrinted = { ...(order.printedQty || {}) };
-      displayItems.forEach(item => {
-        nextPrinted[item.productId] = (nextPrinted[item.productId] || 0) + item.displayQty;
-      });
-      updateOrderPrintedQty(order.id, nextPrinted);
-    }
   };
 
-  const handleDownloadHTML = () => {
-    const title = selectedStation === "bill" ? "Bill" : selectedStation === "kitchen" ? "Kitchen" : "Bar";
+  const handleDownloadPDF = () => {
+    const printOrder = mapOrderToPrintOrder(order);
+    const title = selectedStation === "bill" ? "Bill Print" : selectedStation === "kitchen" ? "Kitchen Print" : "Bar Print";
     let bodyText = "";
     if (selectedStation === "bill") {
       bodyText = `
@@ -427,40 +417,54 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
           <div class="small bold">${settings.address || "Las Anod"}</div>
         </div>
         <div class="receipt-title">CUSTOMER BILL</div>
-        <table class="item-table">
-          <thead>
-            <tr>
-              <th>ITEM</th>
-              <th style="text-align: right">TOTAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${displayItems.map(item => `
-              <tr>
-                <td>
-                  <div class="bold">${item.name}</div>
-                  <div>${item.quantity} x ${money(item.price)}</div>
-                </td>
-                <td style="text-align: right; font-weight: 900;">${money(item.price * item.quantity)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
+        <div class="row"><span>Order</span><b>#${order.orderNumber}</b></div>
+        <div class="row"><span>Table</span><b>${order.tableName || "-"}</b></div>
+        <div class="row"><span>Waiter</span><b>${order.waiterName || "-"}</b></div>
+        <div class="row"><span>Cashier</span><b>${order.cashierName || "-"}</b></div>
+        <div class="row"><span>Date</span><b>${new Date(order.createdAt).toLocaleString()}</b></div>
+        <div class="section-title">ITEMS</div>
+        ${displayItems.map(item => `
+          <div class="item-row">
+            <div class="item-name">${item.name}</div>
+            <div class="qty font-bold">x${item.quantity}</div>
+            <div class="price">${money(item.price * item.quantity)}</div>
+          </div>
+        `).join("")}
+        <div class="section-title">PAYMENT SUMMARY</div>
+        <div class="row"><span>Subtotal</span><b>${money(order.subtotal)}</b></div>
+        <div class="row"><span>Discount</span><b>${money(order.discountAmount || 0)}</b></div>
+        <div class="row"><span>VAT/Tax</span><b>${money(order.vatAmount)}</b></div>
         <div class="total-box">
           <div class="total-row"><span>TOTAL</span><span>${money(order.grandTotal)}</span></div>
         </div>
+        <div class="center bold" style="margin-top: 8px; font-size: ${paperWidth === "58mm" ? "9px" : "11px"}; tracking-wide: 0.5px;">MOBILE MONEY ACCOUNTS</div>
+        <div style="border: 1px dashed #000; border-radius: 4px; padding: 4px 6px; margin: 4px 0 8px 0; font-size: ${paperWidth === "58mm" ? "9px" : "11px"}; line-height: 1.3;">
+          <div class="row"><b>Zaad</b><b>480495</b></div>
+          <div class="row"><b>Sahal</b><b>319347</b></div>
+          <div class="row"><b>eDahab</b><b>759816</b></div>
+          <div class="row"><b>MyCash</b><b>951993</b></div>
+          <div class="row"><b>TPlus</b><b>871056</b></div>
+          <p style="margin: 4px 0 0 0; font-size: ${paperWidth === "58mm" ? "7.5px" : "9px"}; text-align: center; font-weight: normal; font-style: italic;">Pay using one of the accounts above, then show staff receipt ID.</p>
+        </div>
+        <div class="footer">${settings.welcomeMessage || "THANK YOU — COME AGAIN"}</div>
       `;
     } else {
       bodyText = `
         <div class="receipt-title">${selectedStation.toUpperCase()} ORDER</div>
+        <div class="row"><span>Order</span><b>#${order.orderNumber}</b></div>
+        <div class="row"><span>Table</span><b>${order.tableName || "-"}</b></div>
+        <div class="row"><span>Time</span><b>${new Date().toLocaleTimeString()}</b></div>
+        <div class="section-title">${selectedStation.toUpperCase()} ITEMS</div>
         ${displayItems.map(item => `
-          <div class="station-item"><span>${item.name}</span><span>x${item.displayQty}</span></div>
+          <div class="station-item"><span>${item.name}</span><span>value x${item.quantity}</span></div>
+          ${item.notes ? `<div class="note">NOTE: ${item.notes}</div>` : ""}
         `).join("")}
+        <div class="footer">PREPARE ORDER</div>
       `;
     }
 
-    const htmlContent = baseHtml(title, bodyText, paperWidth);
-    const blob = new Blob([htmlContent], { type: "text/html" });
+    const printHtml = baseHtml(title, bodyText, paperWidth);
+    const blob = new Blob([printHtml], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -468,6 +472,21 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleSendEmail = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customerEmail) return;
+    setEmailSending(true);
+    setTimeout(() => {
+      setEmailSending(false);
+      setEmailSentSuccess(true);
+      setTimeout(() => {
+        setEmailSentSuccess(false);
+        setEmailModalOpen(false);
+        setCustomerEmail("");
+      }, 2000);
+    }, 1500);
   };
 
   const copyToClipboard = () => {
@@ -490,7 +509,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
       <div className="flex items-center justify-between px-3.5 py-3.5 bg-stone-900 border-b border-stone-800 text-stone-100">
         <span className="text-[10px] text-amber-400 uppercase tracking-widest font-black flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5" />
-          {selectedStation === "bill" ? "CUSTOMER BILL" : `${selectedStation.toUpperCase()} PREVIEW`}
+          {selectedStation === "bill" ? "CUSTOMER RECEIPTS" : `${selectedStation.toUpperCase()} PREP`}
         </span>
         <div className="flex items-center gap-1.5">
           <button 
@@ -502,20 +521,32 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
           
-          <button 
-            type="button"
-            onClick={handleDownloadHTML}
-            className="p-1.5 text-stone-400 hover:text-white rounded hover:bg-stone-800 transition"
-            title="Download Copy"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
+          {selectedStation === "bill" && (
+            <>
+              <button 
+                type="button"
+                onClick={() => setEmailModalOpen(true)}
+                className="p-1.5 text-stone-400 hover:text-white rounded hover:bg-stone-800 transition"
+                title="Email Receipt"
+              >
+                <Mail className="w-3.5 h-3.5" />
+              </button>
+              <button 
+                type="button"
+                onClick={handleDownloadPDF}
+                className="p-1.5 text-stone-400 hover:text-white rounded hover:bg-stone-800 transition"
+                title="Download HTML Copy"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
 
           <button 
             type="button"
             onClick={handlePrint}
             className="p-1.5 text-stone-100 hover:text-amber-400 hover:bg-stone-800 rounded transition"
-            title="Print"
+            title="Print Ticket"
           >
             <Printer className="w-3.5 h-3.5" />
           </button>
@@ -567,72 +598,45 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
           }`}
         >
           <ChefHat className="w-3 h-3" />
-          Bar/Drinks
+          Barista/Drinks
         </button>
       </div>
 
-      {/* Station Print Mode Selector (New Items vs All Items) */}
-      {selectedStation !== "bill" && (
-        <div className="bg-stone-900 border-b border-stone-800 px-4 py-2 flex items-center justify-between text-[10px] text-stone-300">
-          <span>Filter Print Mode:</span>
-          <div className="flex bg-stone-950 rounded border border-stone-800 p-0.5">
-            <button
-              type="button"
-              onClick={() => setNewOnlyMode(true)}
-              className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                newOnlyMode ? "bg-amber-500 text-stone-950" : "text-stone-400"
-              }`}
-            >
-              New Items Only
-            </button>
-            <button
-              type="button"
-              onClick={() => setNewOnlyMode(false)}
-              className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                !newOnlyMode ? "bg-amber-500 text-stone-950" : "text-stone-400"
-              }`}
-            >
-              All Items
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Simulated thermal receipt paper viewport */}
-      <div className="flex-1 overflow-y-auto p-4 bg-neutral-900/65 flex justify-center items-start">
+      <div className="flex-1 overflow-y-auto p-4 bg-neutral-900/60 flex justify-center items-start">
         <div 
           id={`receipt-text-preview-${order.id}`}
-          className={`w-full bg-stone-50 text-stone-900 p-4 border border-stone-200 rounded shadow-2xl relative transition-all duration-200 ${
-            paperWidth === "58mm" ? "max-w-[240px]" : "max-w-[325px]"
+          className={`w-full bg-white text-black p-4 border border-neutral-300 rounded shadow-md relative transition-all duration-200 ${
+            paperWidth === "58mm" ? "max-w-[230px]" : "max-w-[310px]"
           }`}
-          style={{ fontFamily: "'Courier New', Courier, monospace", lineHeight: "1.25" }}
+          style={{ fontFamily: "'Courier New', Courier, monospace", lineHeight: "1.2" }}
         >
-          {/* Jagged paper top */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-stone-200 flex justify-between px-1.5 overflow-hidden select-none whitespace-nowrap">
-            {[...Array(24)].map((_, i) => (
-              <span key={i} className="text-[6px] text-stone-300">▲</span>
+          {/* Decorative notches */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-neutral-150 flex justify-between px-2 overflow-hidden select-none whitespace-nowrap">
+            {[...Array(12)].map((_, i) => (
+              <span key={i} className="text-[5px] text-neutral-300">■</span>
             ))}
           </div>
 
-          <div className="space-y-2.5 text-[10px] pt-1 text-black">
+          <div className="space-y-2 text-[10px] pt-1 text-black">
             
             {/* Header Details */}
-            <div className="text-center pb-1 border-b border-dashed border-stone-400">
-              <h1 className="text-base font-black uppercase tracking-wider">
+            <div className="text-center pb-1 border-b border-dashed border-black">
+              <h1 className="text-base font-black uppercase tracking-tight">
                 {settings.restaurantName || "LUNA CAFÈ"}
               </h1>
-              <p className="text-[8.5px] uppercase tracking-widest text-neutral-600 font-bold">
-                {selectedStation === "bill" ? "CUSTOMER RECEIPTS" : `${selectedStation.toUpperCase()} ORDER`}
+              <p className="text-[8.5px] uppercase tracking-wider text-neutral-700 font-bold">
+                {selectedStation === "bill" ? "CUSTOMER RECEIPTS" : `${selectedStation.toUpperCase()} PREP`}
               </p>
               {order.status === OrderStatus.PAID && selectedStation === "bill" && (
-                <p className="text-[8px] font-black text-emerald-800 border border-emerald-800 px-1.5 py-0.5 inline-block uppercase mt-1 rounded">
+                <p className="text-[8px] font-black text-emerald-800 border border-emerald-800 px-1 py-0.5 inline-block uppercase mt-1 rounded">
                   ** PAID RECEIPT **
                 </p>
               )}
             </div>
 
             {selectedStation === "bill" && (
-              <div className="text-center text-[8px] leading-tight text-neutral-600 font-medium pb-1.5 border-b border-dotted border-stone-300">
+              <div className="text-center text-[8px] leading-tight text-neutral-700 font-medium pb-1.5 border-b border-dotted border-neutral-400">
                 <p>{settings.address || "Las Anod"}</p>
                 <p>Tel: {settings.phone || "+252 904 440 414"}</p>
                 {settings.email && <p>Email: {settings.email}</p>}
@@ -647,17 +651,13 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
               </div>
               <div className="flex justify-between">
                 <span>TABLE / BLOCK:</span>
-                <span className="font-extrabold uppercase">{order.tableName}</span>
+                <span className="font-black uppercase">{order.tableName}</span>
               </div>
               <div className="flex justify-between">
-                <span>WAITER:</span>
-                <span>{order.waiterName || "-"}</span>
+                <span>STAFF USER:</span>
+                <span>{order.cashierName || order.waiterName || "Counter"}</span>
               </div>
-              <div className="flex justify-between">
-                <span>CASHIER:</span>
-                <span>{order.cashierName || "-"}</span>
-              </div>
-              <div className="flex justify-between border-b border-dashed border-stone-400 pb-1">
+              <div className="flex justify-between border-b border-dashed border-black pb-1">
                 <span>DATE/TIME:</span>
                 <span>
                   {new Date(order.createdAt).toLocaleDateString()} {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -665,43 +665,39 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
               </div>
             </div>
 
-            {/* Items Column Details */}
+            {/* Items Table ordered */}
             <table className="w-full text-[9px] text-black">
               <thead>
-                <tr className="border-b-2 border-dashed border-stone-400 text-left font-black">
-                  <th className="py-0.5">ITEM DETAILS</th>
-                  <th className="py-0.5 text-right">TOTAL</th>
+                <tr className="border-b-2 border-dashed border-black text-left font-black">
+                  <th className="py-0.5 w-[15%]">QTY</th>
+                  <th className="py-0.5 w-[55%]">ITEM</th>
+                  {selectedStation === "bill" && <th className="py-0.5 text-right w-[30%]">TOTAL</th>}
                 </tr>
               </thead>
               <tbody>
                 {displayItems.length === 0 ? (
                   <tr>
-                    <td colSpan={2} className="py-3 text-center text-neutral-500 italic">
-                      No matching items.
+                    <td colSpan={selectedStation === "bill" ? 3 : 2} className="py-3 text-center text-neutral-500 italic">
+                      No matching items for this station.
                     </td>
                   </tr>
                 ) : (
                   displayItems.map((item, idx) => (
                     <tr key={idx} className="align-top border-b border-dotted border-neutral-300">
+                      <td className="py-1 font-black">{item.quantity}x</td>
                       <td className="py-1">
-                        <div className="font-black">{item.name}</div>
-                        <div className="text-[8px] text-neutral-500 font-bold">
-                          {item.displayQty} x ${item.price.toFixed(2)}
-                          {item.alreadyPrinted > 0 && selectedStation !== "bill" && (
-                            <span className="text-[7.5px] text-amber-700 ml-1">
-                              ({item.alreadyPrinted} already printed)
-                            </span>
-                          )}
-                        </div>
+                        <span className="font-bold">{item.name}</span>
                         {item.notes && (
-                          <div className="text-[8px] text-stone-500 italic">
+                          <div className="text-[8px] text-neutral-600 italic">
                             * Note: {item.notes}
                           </div>
                         )}
                       </td>
-                      <td className="py-1 text-right font-black font-mono">
-                        ${(item.price * item.displayQty).toFixed(2)}
-                      </td>
+                      {selectedStation === "bill" && (
+                        <td className="py-1 text-right font-bold font-mono">
+                          ${(item.price * item.quantity).toFixed(2)}
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -711,17 +707,17 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
             {/* Bill Summary section */}
             {selectedStation === "bill" ? (
               <div className="pt-1 border-t border-dashed border-black space-y-0.5 text-[9px] font-bold">
-                <div className="flex justify-between font-bold text-neutral-600">
+                <div className="flex justify-between font-bold text-neutral-700">
                   <span>SUBTOTAL AMOUNT</span>
                   <span>${subTotalAmount.toFixed(2)}</span>
                 </div>
                 {discountAmount > 0 && (
-                  <div className="flex justify-between text-neutral-600">
+                  <div className="flex justify-between text-neutral-700">
                     <span>DISCOUNT APPLIED</span>
                     <span>-${discountAmount.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-neutral-600">
+                <div className="flex justify-between font-bold text-neutral-700">
                   <span>VAT TAX ({settings.vatPercentage || 5}%)</span>
                   <span>${vatAmountVal.toFixed(2)}</span>
                 </div>
@@ -730,7 +726,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
                   <span>${finalGrandTotal.toFixed(2)}</span>
                 </div>
                 {order.paymentMethod && (
-                  <div className="p-1.5 bg-neutral-200/50 border border-neutral-350 rounded mt-1.5 text-[8px] text-neutral-700">
+                  <div className="p-1 bg-neutral-100 border border-neutral-200 rounded mt-1 text-[8px] text-neutral-750">
                     <div className="flex justify-between">
                       <span>CHANNEL:</span>
                       <span className="font-black">{order.paymentMethod}</span>
@@ -743,24 +739,38 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
                     )}
                   </div>
                 )}
-                
-                {/* Mobile money instructions inside preview */}
-                <div className="mt-2 text-[8px] border border-stone-300 rounded p-1.5 text-black bg-white/50 space-y-0.5">
-                  <div className="font-black text-center border-b border-dotted border-stone-350 pb-0.5">MOBILE MONEY ACCOUNTS</div>
-                  <div className="flex justify-between"><span>Zaad</span><b>480495</b></div>
-                  <div className="flex justify-between"><span>Sahal</span><b>319347</b></div>
-                  <div className="flex justify-between"><span>eDahab</span><b>759816</b></div>
-                  <div className="flex justify-between"><span>MyCash</span><b>951993</b></div>
-                  <div className="flex justify-between"><span>TPlus</span><b>871056</b></div>
+                <div className="mt-2.5 p-2 bg-neutral-50 border border-dotted border-neutral-400 rounded-lg space-y-1 text-[8px] text-black">
+                  <div className="font-black text-center text-neutral-900 tracking-wider">MOBILE MONEY ACCOUNTS</div>
+                  <div className="flex justify-between font-bold">
+                    <span>Zaad</span>
+                    <span className="font-mono font-black">480495</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>Sahal</span>
+                    <span className="font-mono font-black">319347</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>eDahab</span>
+                    <span className="font-mono font-black">759816</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>MyCash</span>
+                    <span className="font-mono font-black">951993</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>TPlus</span>
+                    <span className="font-mono font-black">871056</span>
+                  </div>
+                  <p className="text-[6.5px] mt-1 text-center font-medium italic text-neutral-500">Pay using one of the accounts above, then show staff receipt ID.</p>
                 </div>
               </div>
             ) : (
-              <div className="pt-1 border-t border-dashed border-black text-center text-[8px] font-black uppercase tracking-widest text-neutral-700">
+              <div className="pt-1 border-t border-dashed border-black text-center text-[8px] font-black uppercase tracking-widest text-neutral-800">
                 *** PREPARE TICKET - {selectedStation.toUpperCase()} ***
               </div>
             )}
 
-            {/* Brand Logo and scan */}
+            {/* Simulated Scannable table QR graphic */}
             {selectedStation === "bill" && (
               <div className="flex flex-col items-center justify-center pt-2 pb-1 border-t border-dashed border-neutral-300">
                 <div className="w-[50px] h-[50px] bg-white border border-neutral-200 p-0.5 rounded flex items-center justify-center">
@@ -780,7 +790,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
             {/* Appreciation message */}
             <div className="text-center pt-1 mt-1 border-t border-dashed border-neutral-300">
               {selectedStation === "bill" && (
-                <p className="text-[8px] font-black text-neutral-650 leading-tight">
+                <p className="text-[8px] font-black text-neutral-700 leading-tight">
                   {settings.appreciationMessage || "We Look Forward To Serving You Again, Welcome"}
                 </p>
               )}
@@ -798,7 +808,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
       <div className="px-4 py-3 bg-stone-900 border-t border-stone-800 flex justify-between items-center gap-2.5">
         <div className="flex items-center gap-1.5">
           <span className="text-[8px] text-stone-400 font-black uppercase">
-            Paper:
+            Format:
           </span>
           <div className="flex bg-stone-950 p-0.5 rounded border border-stone-800">
             <button 
@@ -832,6 +842,245 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
         </button>
       </div>
 
+      {/* Email overlay popup inside previewer modal */}
+      {emailModalOpen && (
+        <div className="absolute inset-0 bg-black/85 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 max-w-xs w-full space-y-3 relative text-white">
+            <button 
+              type="button"
+              onClick={() => setEmailModalOpen(false)}
+              className="absolute top-2.5 right-2.5 text-stone-400 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+            <div className="space-y-0.5">
+              <h3 className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                <Mail className="w-3.5 h-3.5" />
+                Email Invoice
+              </h3>
+              <p className="text-[9px] text-stone-400">
+                Send a digital transaction invoice directly to client.
+              </p>
+            </div>
+
+            {emailSentSuccess ? (
+              <div className="bg-emerald-950/40 border border-emerald-900/50 p-2.5 rounded-xl text-center space-y-1">
+                <Check className="w-4 h-4 text-emerald-400 mx-auto animate-bounce" />
+                <p className="font-bold text-emerald-400 text-[10px]">Emailed successfully!</p>
+                <p className="text-[8px] text-stone-400 font-sans">Delivered to: {customerEmail}</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSendEmail} className="space-y-2">
+                <div className="space-y-1">
+                  <label className="text-[8px] font-bold text-stone-500 uppercase block">Client Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="guest@domain.com"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    className="w-full bg-stone-950 border border-stone-800 p-2 rounded text-white font-sans outline-none focus:border-amber-500 text-[10px]"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={emailSending}
+                  className="w-full py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-stone-800 text-stone-950 font-black rounded transition text-[10px] uppercase"
+                >
+                  {emailSending ? "Sending Invoice..." : "Dispatch Email"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
+type LocalReceiptItem = {
+  name: string;
+  qty: number;
+  price: number;
+  station?: "kitchen" | "bar" | "coffee";
+};
+
+type LocalReceiptOrder = {
+  receiptNo: string;
+  billNo: string;
+  table: string;
+  waiter: string;
+  status: string;
+  date: string;
+  items: LocalReceiptItem[];
+  vatRate?: number;
+};
+
+const formatPlain = (n: number) => n.toFixed(2);
+
+export function printCustomerReceipt(order: LocalReceiptOrder, paper: "58mm" | "80mm" = "80mm") {
+  const subtotal = order.items.reduce((s, i) => s + i.price * i.qty, 0);
+  const vat = subtotal * (order.vatRate ?? 0.05);
+  const total = subtotal + vat;
+
+  const html = `
+  <html>
+  <head>
+    <style>
+      @page { size: ${paper} auto; margin: 0; }
+      body {
+        font-family: Arial, sans-serif;
+        width: ${paper === "80mm" ? "72mm" : "48mm"};
+        margin: 0 auto;
+        padding: 6px;
+        color: #000;
+        font-size: ${paper === "80mm" ? "12px" : "10px"};
+      }
+      .center { text-align: center; }
+      .bold { font-weight: 800; }
+      .title { font-size: ${paper === "80mm" ? "22px" : "17px"}; font-weight: 900; }
+      .line { border-top: 1px dashed #000; margin: 6px 0; }
+      .row { display: flex; justify-content: space-between; gap: 6px; }
+      .item { margin: 7px 0; }
+      .item-name { font-weight: 800; font-size: ${paper === "80mm" ? "14px" : "11px"}; }
+      .total { font-size: ${paper === "80mm" ? "18px" : "15px"}; font-weight: 900; }
+      .accounts {
+        border: 1px dashed #000;
+        border-radius: 6px;
+        padding: 6px;
+        margin-top: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="center">
+      <div class="title">Luna Cafe</div>
+      <div>Luna Cafe, Laascaanood, Sool, Somalia</div>
+      <div>Tel: +252904440414</div>
+    </div>
+
+    <div class="line"></div>
+
+    <div class="row"><span>Receipt:</span><b>#${order.receiptNo}</b></div>
+    <div class="row"><span>Date:</span><span>${order.date}</span></div>
+    <div class="row"><span>Table:</span><b>${order.table}</b></div>
+    <div class="row"><span>Status:</span><b>${order.status}</b></div>
+    <div class="row"><span>Waiter:</span><b>${order.waiter}</b></div>
+    <div class="row"><span>Bill No:</span><b>${order.billNo}</b></div>
+
+    <div class="line"></div>
+    <div class="bold">ITEMS</div>
+
+    ${order.items.map(i => `
+      <div class="item">
+        <div class="row">
+          <span class="item-name">${i.name}</span>
+          <span class="bold">${formatPlain(i.price * i.qty)}</span>
+        </div>
+        <div>${formatPlain(i.price)} x ${i.qty}</div>
+      </div>
+      <div class="line"></div>
+    `).join("")}
+
+    <div class="row"><span>Subtotal</span><b>${formatPlain(subtotal)}</b></div>
+    <div class="row"><span>VAT (${((order.vatRate ?? 0.05) * 100).toFixed(0)}%)</span><b>${formatPlain(vat)}</b></div>
+
+    <div class="line"></div>
+    <div class="row total"><span>TOTAL</span><span>${formatPlain(total)}</span></div>
+    <div class="line"></div>
+
+    <div class="bold">MOBILE MONEY ACCOUNTS</div>
+    <div class="accounts">
+      <div class="row"><b>Zaad</b><b>480495</b></div>
+      <div class="row"><b>Sahal</b><b>319347</b></div>
+      <div class="row"><b>eDahab</b><b>759816</b></div>
+      <div class="row"><b>MyCash</b><b>951993</b></div>
+      <div class="row"><b>TPlus</b><b>871056</b></div>
+      <p>Pay using one of the accounts above, then show staff your receipt ID.</p>
+    </div>
+
+    <div class="line"></div>
+    <div class="center bold">Thank You ❤️</div>
+    <div class="center">Please come again</div>
+  </body>
+  </html>`;
+
+  printHtml(html);
+}
+
+export function printStationTicket(
+  order: LocalReceiptOrder,
+  station: "kitchen" | "bar" | "coffee",
+  paper: "58mm" | "80mm" = "80mm"
+) {
+  const stationItems = order.items.filter(i => i.station === station);
+
+  if (stationItems.length === 0) return;
+
+  const title = station.toUpperCase() + " TICKET";
+
+  const html = `
+  <html>
+  <head>
+    <style>
+      @page { size: ${paper} auto; margin: 0; }
+      body {
+        font-family: Arial, sans-serif;
+        width: ${paper === "80mm" ? "72mm" : "48mm"};
+        margin: 0 auto;
+        padding: 6px;
+        color: #000;
+        font-size: ${paper === "80mm" ? "12px" : "10px"};
+      }
+      .center { text-align: center; }
+      .title { font-size: ${paper === "80mm" ? "22px" : "17px"}; font-weight: 900; }
+      .line { border-top: 2px dashed #000; margin: 7px 0; }
+      .row { display: flex; justify-content: space-between; gap: 6px; }
+      .big-order { font-size: ${paper === "80mm" ? "24px" : "18px"}; font-weight: 900; }
+      .item { font-weight: 900; font-size: ${paper === "80mm" ? "14px" : "11px"}; margin: 10px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="center title">${title}</div>
+    <div class="line"></div>
+
+    <div class="row"><span>Order</span><span class="big-order">#${order.receiptNo}</span></div>
+    <div class="row"><span>Table</span><b>${order.table}</b></div>
+    <div class="row"><span>Waiter</span><b>${order.waiter}</b></div>
+    <div class="row"><span>Time</span><span>${order.date}</span></div>
+
+    <div class="line"></div>
+
+    ${stationItems.map(i => `
+      <div class="row item">
+        <span>${i.name}</span>
+        <span>x${i.qty}</span>
+      </div>
+      <div class="line"></div>
+    `).join("")}
+
+    <div class="center">Printed: ${new Date().toLocaleString()}</div>
+  </body>
+  </html>`;
+
+  printHtml(html);
+}
+
+function printHtml(html: string) {
+  const win = window.open("", "_blank", "width=400,height=600");
+
+  if (!win) {
+    alert("Popup blocked. Please allow popups for printing.");
+    return;
+  }
+
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+
+  win.onload = () => {
+    win.focus();
+    win.print();
+    win.close();
+  };
+}

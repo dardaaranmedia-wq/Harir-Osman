@@ -107,9 +107,8 @@ export interface Order {
   waiterName?: string;
   cashierName?: string;
   customerNotes?: string;
+  cancelReason?: string;
   auditHistory?: OrderAuditLog[];
-  businessDate?: string;
-  printedQty?: Record<string, number>;
 }
 
 export interface ReceiptTemplate {
@@ -139,6 +138,4 @@ export interface SystemSettings {
   serviceChargePercentage?: number; // E.g. 10%
   logoUrl?: string;
   printerPaperWidth: "80mm" | "58mm";
-  customerSelfOrderLocked?: boolean;
-  customerSelfOrderAutoApprove?: boolean;
 }

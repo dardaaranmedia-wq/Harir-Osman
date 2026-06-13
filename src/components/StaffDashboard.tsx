@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-import { usePOS, getBusinessDate } from "../store/posStore";
-import { Order, OrderItem, OrderStatus, Product, Table } from "../types";
+import { usePOS } from "../store/posStore";
+import { Order, OrderItem, OrderStatus, Product, Table, UserRole } from "../types";
 import { 
   Coffee, Layers, Check, ShoppingCart, Search, Plus, Minus, Trash2, 
-  MessageSquare, Printer, CheckCircle, Flame, Coffee as Cup, ShieldCheck, X, FileText, ChevronRight 
+  MessageSquare, Printer, CheckCircle, Flame, Coffee as Cup, ShieldCheck, X, FileText, ChevronRight, AlertTriangle
 } from "lucide-react";
 import { ReceiptView } from "./ReceiptPrinters";
 import { LunaLogo } from "./LunaLogo";
@@ -11,47 +11,30 @@ import { LunaLogo } from "./LunaLogo";
 export const StaffDashboard: React.FC = () => {
   const { 
     currentUser, categories, products, tables, orders, settings, users,
-    createOrder, approveOrder, rejectOrder, updateOrderItems, serveOrder, payOrder, logout,
-    theme, setTheme, updateOrderWaiter, updateOrderWithAuditTrail,
-    selectedBusinessDate, setSelectedBusinessDate
+    createOrder, approveOrder, rejectOrder, updateOrderItems, serveOrder, cancelOrder, payOrder, logout,
+    theme, setTheme, updateOrderWaiter, updateOrderWithAuditTrail
   } = usePOS();
 
-  // Screen modes: "order" (Create Order), "queue" (Order Queue manager), or "waiter_landing" (Waiter dashboard)
-  const [activeScreen, setActiveScreen] = useState<"order" | "queue" | "waiter_landing" >(() => 
-    currentUser?.role === "Waiter" ? "waiter_landing" : "order"
+  // Screen modes: "order" (Create Order) or "queue" (Order Queue manager)
+  const [activeScreen, setActiveScreen] = useState<"order" | "queue">(() => 
+    currentUser?.role === "Waiter" ? "queue" : "order"
   );
   
-  // Dashboard Order Queue Tab (Pending, NEW, SERVED, PAID)
-  const [queueTab, setQueueTab] = useState<OrderStatus | "Pending">(() => 
-    currentUser?.role === "Waiter" ? OrderStatus.NEW : "Pending"
-  );
+  // Dashboard Order Queue Tab (1 = New, 2 = Served, 3 = Paid, 4 = QR Pending)
+  const [queueTab, setQueueTab] = useState<OrderStatus | "Pending">((currentUser?.role === "Waiter") ? OrderStatus.NEW : "Pending");
 
   // Selection states inside "Create Order" mode
   const [selectedTable, setSelectedTable] = useState<string>("LUNA-T01");
+  const [orderCustomerType, setOrderCustomerType] = useState<"Dine-In" | "Takeaway">("Dine-In");
+  const [assignedWaiterName, setAssignedWaiterName] = useState<string>("");
   const [tableSearch, setTableSearch] = useState<string>("");
   const [orderCategory, setOrderCategory] = useState<string>("all");
   const [productSearch, setProductSearch] = useState<string>("");
   
-  // Active temporary order waiter assignment for Cashiers
-  const [assignedWaiterName, setAssignedWaiterName] = useState<string>("");
-
   // Active temporary order tray for creating a POS order
   const [trayItems, setTrayItems] = useState<OrderItem[]>([]);
   const [trayNotes, setTrayNotes] = useState<{ [id: string]: string }>({});
   const [generalTrayComment, setGeneralTrayComment] = useState("");
-
-  // Section specific search states with modes: all, order, table, waiter, item
-  const [newSearchQuery, setNewSearchQuery] = useState("");
-  const [newSearchMode, setNewSearchMode] = useState<"order" | "table" | "waiter" | "item" | "all">("all");
-
-  const [servedSearchQuery, setServedSearchQuery] = useState("");
-  const [servedSearchMode, setServedSearchMode] = useState<"order" | "table" | "waiter" | "item" | "all">("all");
-
-  const [paidSearchQuery, setPaidSearchQuery] = useState("");
-  const [paidSearchMode, setPaidSearchMode] = useState<"order" | "table" | "waiter" | "item" | "all">("all");
-
-  const [pendingSearchQuery, setPendingSearchQuery] = useState("");
-  const [pendingSearchMode, setPendingSearchMode] = useState<"order" | "table" | "waiter" | "item" | "all">("all");
 
   // Receipt printing state variables
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
@@ -59,6 +42,7 @@ export const StaffDashboard: React.FC = () => {
   const [servingOrderWithOptions, setServingOrderWithOptions] = useState<Order | null>(null);
   const [printKitchenChecked, setPrintKitchenChecked] = useState(true);
   const [printBaristaChecked, setPrintBaristaChecked] = useState(true);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
 
   // Filter tables to pick
   const filteredTablesToPick = tables.filter(t => 
@@ -108,16 +92,13 @@ export const StaffDashboard: React.FC = () => {
     if (trayItems.length === 0) return;
     
     // Create new active order
-    const waiter = currentUser?.role === "Cashier" 
-      ? (assignedWaiterName || "Counter POS") 
-      : (currentUser?.name || "Staff");
-
     createOrder(
       selectedTable,
       trayItems,
       generalTrayComment,
-      waiter,
-      false // Directly confirmed
+      assignedWaiterName || currentUser?.name || "Staff",
+      false, // Directly confirmed
+      orderCustomerType
     );
 
     // Reset Tray
@@ -125,64 +106,25 @@ export const StaffDashboard: React.FC = () => {
     setTrayNotes({});
     setGeneralTrayComment("");
     setAssignedWaiterName("");
+    setOrderCustomerType("Dine-In");
     
     // Switch to queue
     setActiveScreen("queue");
     setQueueTab(OrderStatus.NEW);
   };
 
-  const matchSearch = (
-    order: Order, 
-    query: string, 
-    mode: "order" | "table" | "waiter" | "item" | "all"
-  ): boolean => {
-    if (!query) return true;
-    const cleanQuery = query.toLowerCase().trim();
-
-    if (mode === "order") {
-      // User only types digits sequence after prefix 'LN-', check if order number matches cleanest
-      return (order.orderNumber || "").toLowerCase().includes(cleanQuery);
-    }
-    if (mode === "table") {
-      // User typed digit code after prefix 'Table-', e.g. '05' matches 'Table 05'
-      return (order.tableName || "").toLowerCase().includes(`table ${cleanQuery}`) ||
-             (order.tableId || "").toLowerCase().includes(cleanQuery);
-    }
-    if (mode === "waiter") {
-      return (order.waiterName || "").toLowerCase().includes(cleanQuery);
-    }
-    if (mode === "item") {
-      return order.items.some(it => (it.name || "").toLowerCase().includes(cleanQuery));
-    }
-
-    return (
-      (order.orderNumber || "").toLowerCase().includes(cleanQuery) ||
-      (order.tableName || "").toLowerCase().includes(cleanQuery) ||
-      (order.waiterName || "").toLowerCase().includes(cleanQuery) ||
-      order.items.some(it => (it.name || "").toLowerCase().includes(cleanQuery))
-    );
-  };
-
-  // Filter orders by active queue tab selection & search matching logic
-  const displayedOrders = orders.filter(o => {
-    const matchesDate = !o.businessDate || o.businessDate === selectedBusinessDate;
-
+  // Filter orders by active queue tab selection
+  const filteredOrders = orders.filter(o => {
+    // Tab 4 is Customer self order Pending QR
     if (queueTab === "Pending") {
-      return o.status === OrderStatus.PENDING_QR && matchesDate && matchSearch(o, pendingSearchQuery, pendingSearchMode);
+      return o.status === OrderStatus.PENDING_QR;
     }
-    if (queueTab === OrderStatus.NEW) {
-      return o.status === OrderStatus.NEW && matchesDate && matchSearch(o, newSearchQuery, newSearchMode);
-    }
-    if (queueTab === OrderStatus.SERVED) {
-      return o.status === OrderStatus.SERVED && matchesDate && matchSearch(o, servedSearchQuery, servedSearchMode);
-    }
-    // For paid status we filter strictly by orders where businessDate === selectedBusinessDate!
-    return o.status === OrderStatus.PAID && 
-           matchesDate &&
-           matchSearch(o, paidSearchQuery, paidSearchMode);
+    return o.status === queueTab;
   });
 
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [cancellingOrder, setCancellingOrder] = useState<Order | null>(null);
+  const [cancelReasonText, setCancelReasonText] = useState("");
   const [editReason, setEditReason] = useState("");
   const [editNotes, setEditNotes] = useState<{ [id: string]: string }>({});
   const [editProductSearch, setEditProductSearch] = useState("");
@@ -229,7 +171,7 @@ export const StaffDashboard: React.FC = () => {
       customerTypeVal
     );
 
-    // Prompt receipt printing view
+    // After checkout triggers, configure the paid model parameters to load the high-fidelity receipt view instantly
     const simulatedPaidOrder = {
       ...paymentActiveOrder,
       status: OrderStatus.PAID,
@@ -259,7 +201,6 @@ export const StaffDashboard: React.FC = () => {
     setEditNotes(initialNotes);
     setEditProductSearch("");
     setEditCategoryFilter("all");
-    setEditReason("");
   };
 
   const updateEditQty = (prodId: string, delta: number) => {
@@ -267,10 +208,10 @@ export const StaffDashboard: React.FC = () => {
     const updatedItems = editingOrder.items.map(it => {
       if (it.productId === prodId) {
         const next = it.quantity + delta;
-        return next > 0 ? { ...it, quantity: next } : null;
+        return { ...it, quantity: next };
       }
       return it;
-    }).filter((it): it is OrderItem => it !== null);
+    }).filter(it => it.quantity > 0);
 
     setEditingOrder({
       ...editingOrder,
@@ -278,577 +219,671 @@ export const StaffDashboard: React.FC = () => {
     });
   };
 
-  const handleAddEditProduct = (prod: Product) => {
+  const addEditProduct = (prod: Product) => {
     if (!editingOrder) return;
     const existingItem = editingOrder.items.find(it => it.productId === prod.id);
-    let updatedItems: OrderItem[];
-
     if (existingItem) {
-      updatedItems = editingOrder.items.map(it => 
-        it.productId === prod.id ? { ...it, quantity: it.quantity + 1 } : it
-      );
+      updateEditQty(prod.id, 1);
     } else {
-      updatedItems = [
-        ...editingOrder.items,
-        {
-          productId: prod.id,
-          name: prod.name,
-          price: prod.price,
-          quantity: 1,
-          isDrink: prod.isDrink,
-          notes: editNotes[prod.id] || ""
-        }
-      ];
+      setEditingOrder({
+        ...editingOrder,
+        items: [
+          ...editingOrder.items,
+          {
+            productId: prod.id,
+            name: prod.name,
+            price: prod.price,
+            quantity: 1,
+            isDrink: prod.isDrink,
+            stationId: prod.stationId || (prod.isDrink ? "station-bar" : "station-kitchen")
+          }
+        ]
+      });
     }
-
-    setEditingOrder({
-      ...editingOrder,
-      items: updatedItems
-    });
   };
 
-  const handleSaveEditOrder = () => {
+  const saveEditedOrder = () => {
     if (!editingOrder) return;
     
+    // Update local context with detailed auditing trace
     updateOrderWithAuditTrail(
       editingOrder.id,
       editingOrder.items,
-      currentUser?.name || "Staff",
+      currentUser?.name || "Staff Cashier",
       currentUser?.role || "Cashier",
-      editingOrder.discountAmount || 0,
-      editingOrder.serviceCharge || 0,
-      editReason || "Manually updated order items",
+      0, // discount
+      0, // service charge
+      editReason ? editReason.trim() : "Items/Quantities adjusted prior approval",
       editingOrder.customerNotes
     );
-
+    
     setEditingOrder(null);
     setEditReason("");
   };
 
-  const handleEditNote = (prodId: string, txt: string) => {
-    setEditNotes(prev => ({ ...prev, [prodId]: txt }));
-    if (!editingOrder) return;
-    setEditingOrder({
-      ...editingOrder,
-      items: editingOrder.items.map(it => it.productId === prodId ? { ...it, notes: txt } : it)
-    });
-  };
+  return (
+    <div id="staff-workspace" className="min-h-screen bg-stone-100 flex flex-col font-sans select-none overflow-hidden h-screen">
 
-  const handleServerOrderWithOptions = () => {
-    if (!servingOrderWithOptions) return;
-    serveOrder(servingOrderWithOptions.id);
-    
-    // Auto printing optional station tickets on serving
-    const activeOrder = servingOrderWithOptions;
-    setServingOrderWithOptions(null);
-
-    const matchItems = activeOrder.items.map(it => ({
-      name: it.name,
-      qty: it.quantity,
-      price: it.price,
-      note: it.notes
-    }));
-
-    const printOrder = {
-      orderNo: activeOrder.orderNumber,
-      table: activeOrder.tableName,
-      waiter: activeOrder.waiterName || "-",
-      cashier: currentUser?.name || "Cashier",
-      createdAt: new Date().toLocaleString(),
-      items: matchItems,
-      subtotal: activeOrder.subtotal,
-      discount: activeOrder.discountAmount || 0,
-      tax: activeOrder.vatAmount || 0,
-      total: activeOrder.grandTotal
-    };
-
-    if (printKitchenChecked && activeOrder.items.some(it => !it.isDrink)) {
-      setPrintingOrder(activeOrder);
-      setReceiptType("kitchen");
-    } else if (printBaristaChecked && activeOrder.items.some(it => it.isDrink)) {
-      setPrintingOrder(activeOrder);
-      setReceiptType("barista");
-    }
-  };
-
-  // Reusable custom prefixed Search Bar component
-  const renderCustomSearchBar = (
-    query: string,
-    setQuery: (q: string) => void,
-    mode: "order" | "table" | "waiter" | "item" | "all",
-    setMode: (m: "order" | "table" | "waiter" | "item" | "all") => void
-  ) => {
-    return (
-      <div className="bg-white rounded-2xl p-4 shadow-xs border border-neutral-200/60 mb-6 shrink-0 flex flex-col gap-3 max-w-7xl mx-auto w-full">
-        {/* Toggle selectors */}
-        <div className="flex flex-wrap items-center justify-between gap-3 text-[10px] font-bold text-neutral-400">
-          <span className="uppercase tracking-widest font-black text-neutral-850">Search Area Fields:</span>
-          <div className="flex bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
-            <button
-              type="button"
-              onClick={() => { setMode("all"); setQuery(""); }}
-              className={`px-3 py-1 text-[9px] uppercase tracking-wider rounded-md transition-all ${
-                mode === "all" ? "bg-amber-950 text-white font-black" : "text-neutral-500 hover:text-neutral-805"
-              }`}
-            >
-              All columns
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode("order"); setQuery(""); }}
-              className={`px-3 py-1 text-[9px] uppercase tracking-wider rounded-md transition-all flex items-center gap-1 ${
-                mode === "order" ? "bg-amber-950 text-white font-black" : "text-neutral-500 hover:text-neutral-805"
-              }`}
-            >
-              Order ID (LN-)
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode("table"); setQuery(""); }}
-              className={`px-3 py-1 text-[9px] uppercase tracking-wider rounded-md transition-all flex items-center gap-1 ${
-                mode === "table" ? "bg-amber-950 text-white font-black" : "text-neutral-500 hover:text-neutral-805"
-              }`}
-            >
-              Table (Table-)
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode("waiter"); setQuery(""); }}
-              className={`px-3 py-1 text-[9px] uppercase tracking-wider rounded-md transition-all ${
-                mode === "waiter" ? "bg-amber-950 text-white font-black" : "text-neutral-500 hover:text-neutral-855"
-              }`}
-            >
-              Waiter
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode("item"); setQuery(""); }}
-              className={`px-3 py-1 text-[9px] uppercase tracking-wider rounded-md transition-all ${
-                mode === "item" ? "bg-amber-950 text-white font-black" : "text-neutral-500 hover:text-neutral-855"
-              }`}
-            >
-              Food Item
-            </button>
+      {/* Header bar */}
+      <header className="bg-amber-950 text-white px-6 py-3 shrink-0 flex flex-col md:flex-row items-center gap-3 justify-between shadow-md">
+        <div className="flex items-center gap-3 justify-between w-full md:w-auto">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-amber-900 rounded-xl flex items-center justify-center border border-amber-800">
+              <Coffee className="w-5 h-5 text-amber-300" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-wider">{settings.restaurantName} POS</h2>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                <p className="text-[10px] text-neutral-300 font-bold">
+                  Logged in: <span className="text-amber-400">{currentUser?.name}</span> ({currentUser?.role})
+                </p>
+              </div>
+            </div>
           </div>
+          
+          {/* Quick mobile logout toggle */}
+          <button 
+            type="button" 
+            onClick={logout}
+            className="md:hidden text-[10px] bg-amber-900 px-2.5 py-1.5 rounded-lg border border-amber-800 font-extrabold text-amber-200"
+          >
+            Logout
+          </button>
         </div>
 
-        {/* Input bar with absolute text prefix badges */}
-        <div className="flex gap-2 items-center">
-          <div className="relative flex-1 flex items-center">
-            
-            {mode === "order" && (
-              <div className="absolute left-3 bg-neutral-100/80 text-neutral-700 border border-neutral-200 text-[10px] font-black px-1.5 py-0.5 rounded select-none uppercase">
-                LN-
-              </div>
-            )}
-            {mode === "table" && (
-              <div className="absolute left-3 bg-neutral-100/80 text-neutral-700 border border-neutral-200 text-[10px] font-black px-1.5 py-0.5 rounded select-none uppercase">
-                Table-
-              </div>
-            )}
-
-            <input
-              type="text"
-              placeholder={
-                mode === "order" ? "Type sequence number (e.g. 1002)" :
-                mode === "table" ? "Type table number (e.g. 05)" :
-                mode === "waiter" ? "Search waiter name" :
-                mode === "item" ? "Search menu item name" :
-                "Search in logs..."
-              }
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className={`w-full bg-neutral-50 border border-neutral-200 outline-none text-xs text-neutral-800 font-extrabold p-3 rounded-xl focus:bg-white focus:border-amber-950 transition-all ${
-                mode === "order" ? "pl-14" : mode === "table" ? "pl-20" : "pl-11"
-              }`}
-            />
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3 w-5 pointer-events-none" style={{ display: mode === "order" || mode === "table" ? "none" : "block" }} />
-          </div>
-
-          {query && (
+        {/* Universal Search Bar input container */}
+        <div className="relative w-full md:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-900 font-extrabold" />
+          <input
+            type="text"
+            value={globalSearchQuery}
+            onChange={(e) => setGlobalSearchQuery(e.target.value)}
+            placeholder="Search matching order #No, waitstaff, table ID or number..."
+            className="w-full text-xs pl-9 pr-8 py-2.5 rounded-xl bg-orange-50 hover:bg-white focus:bg-white text-neutral-900 placeholder:text-neutral-500 border-2 border-amber-800 outline-none focus:outline-none focus:border-amber-950 font-bold shadow-md transition"
+          />
+          {globalSearchQuery && (
             <button
-              type="button"
-              onClick={() => setQuery("")}
-              className="text-neutral-500 hover:text-neutral-800 bg-neutral-100 p-2.5 rounded-xl text-xs font-bold transition"
+              onClick={() => setGlobalSearchQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-neutral-200 hover:bg-neutral-300 text-neutral-800 hover:text-neutral-950 transition"
+              title="Clear search query"
             >
-              Reset
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
-      </div>
-    );
-  };
 
-  const currentCategoryObj = categories.find(c => c.id === orderCategory);
-
-  return (
-    <div className="h-screen flex flex-col bg-neutral-50 text-neutral-800 overflow-hidden select-none">
-      
-      {/* Upper POS Status Nav bar */}
-      <header className="bg-white border-b border-neutral-200/90 py-3.5 px-6 shrink-0 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-850 px-3.5 py-1 text-white text-xs font-black uppercase rounded-xl tracking-widest leading-none">
-            <Layers className="w-4 h-4 text-amber-500 scale-90" />
-            LUNA CAFÈ POS 
-          </div>
-          <span className="text-[10px] text-neutral-400 font-black uppercase tracking-wider hidden sm:block">
-            Shift Operator: <b className="text-[#3a2010] pr-1.5">{currentUser?.name}</b> ({currentUser?.role})
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex bg-neutral-100 p-0.5 rounded-xl border border-neutral-200">
-            {currentUser?.role === "Waiter" && (
-              <button 
-                onClick={() => setActiveScreen("waiter_landing")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
-                  activeScreen === "waiter_landing" 
-                    ? "bg-amber-950 text-white shadow-xs" 
-                    : "text-neutral-500 hover:text-neutral-800"
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                Dashboard
-              </button>
-            )}
-
-            {(currentUser?.role !== "Waiter" || activeScreen === "order") && (
-              <button 
-                onClick={() => setActiveScreen("order")}
-                className={`flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
-                  activeScreen === "order" 
-                    ? "bg-amber-950 text-white shadow-xs" 
-                    : "text-neutral-500 hover:text-neutral-800"
-                }`}
-              >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                Dine In POS
-              </button>
-            )}
-
+        {/* View toggles */}
+        {currentUser?.role !== "Waiter" ? (
+          <div className="flex bg-amber-900/40 p-1 rounded-xl border border-amber-800/50">
             <button 
-              onClick={() => setActiveScreen("queue")}
-              className={`flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
-                activeScreen === "queue" 
-                  ? "bg-amber-950 text-white shadow-xs" 
-                  : "text-neutral-500 hover:text-neutral-800"
+              onClick={() => setActiveScreen("order")}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeScreen === "order" ? "bg-amber-900 text-white shadow-md" : "text-amber-200/80 hover:text-white"
               }`}
             >
-              <FileText className="w-3.5 h-3.5" />
-              Active Book ({orders.filter(o => o.status !== OrderStatus.PAID && (!o.businessDate || o.businessDate === selectedBusinessDate)).length})
+              <ShoppingCart className="w-4 h-4" />
+              Create POS Order
+            </button>
+            
+            <button 
+              onClick={() => setActiveScreen("queue")}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 relative ${
+                activeScreen === "queue" ? "bg-amber-900 text-white shadow-md" : "text-amber-200/80 hover:text-white"
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              Order Queue Manager
+              {orders.some(o => o.status === OrderStatus.PENDING_QR) && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-bounce">
+                  {orders.filter(o => o.status === OrderStatus.PENDING_QR).length}
+                </span>
+              )}
             </button>
           </div>
+        ) : (
+          <div className="bg-amber-900/40 p-1 rounded-xl border border-amber-800/50 px-4 py-2 text-amber-300 font-extrabold uppercase text-[10px] tracking-widest">
+            Waiter Portal
+          </div>
+        )}
 
+        {/* Theme mode selector */}
+        <div className="flex bg-amber-900/40 p-1 rounded-xl border border-amber-800/50 items-center">
           <button 
-            onClick={logout}
-            className="px-3.5 py-2 hover:bg-red-50 text-red-600 rounded-xl text-xs font-bold transition flex items-center gap-1 border border-neutral-200"
+            type="button"
+            onClick={() => setTheme("light")}
+            className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition ${
+              theme === "light" ? "bg-amber-100 text-amber-950 font-extrabold" : "text-amber-200 hover:text-white"
+            }`}
           >
-            Sign Out
+            Light
+          </button>
+          <button 
+            type="button"
+            onClick={() => setTheme("dark")}
+            className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition ${
+              theme === "dark" ? "bg-amber-950 text-white font-extrabold" : "text-amber-200 hover:text-white"
+            }`}
+          >
+            Dark
+          </button>
+          <button 
+            type="button"
+            onClick={() => setTheme("white")}
+            className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition ${
+              theme === "white" ? "bg-white text-black font-extrabold" : "text-amber-200 hover:text-white"
+            }`}
+          >
+            White
           </button>
         </div>
+
+        <button 
+          onClick={logout}
+          className="text-xs font-bold bg-amber-900 hover:bg-neutral-800 border border-amber-800/80 text-amber-300 px-3.5 py-2 rounded-xl transition active:scale-95"
+        >
+          Logout PIN
+        </button>
       </header>
 
-      {/* Main content viewport panels */}
+      {/* Main stage splits */}
       <div className="flex-1 flex overflow-hidden">
         
-        {activeScreen === "waiter_landing" ? (
-          <div className="flex-1 overflow-y-auto bg-neutral-100/60 p-8 flex justify-center items-center">
-            <div className="w-full max-w-3xl space-y-8">
-              {/* Dynamic Welcome Heading Card */}
-              <div className="bg-white rounded-3xl p-6 shadow-xs border border-neutral-200/40 flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-mono tracking-widest text-[#B08E2B] font-black uppercase">
-                    EMPLOYEE SECURITY AUTHENTICATED
-                  </span>
-                  <h1 className="text-xl font-black text-neutral-900">
-                    Welcome back, {currentUser?.name || "Staff Member"} ☕
-                  </h1>
-                  <p className="text-xs text-neutral-500 font-medium">
-                    Manage table seatings, register customer beverages, and process order flows seamlessly.
-                  </p>
+        {globalSearchQuery ? (
+          /* ==============================================
+             UNIVERSAL SEARCH SYSTEM RESULTS VIEW
+             ============================================== */
+          <div className="flex-1 flex flex-col bg-stone-100 overflow-y-auto p-6 space-y-6">
+            <div className="flex justify-between items-center border-b border-stone-200 pb-4 shrink-0">
+              <div>
+                <span className="text-[10px] text-amber-800 uppercase tracking-widest font-black block">Luna Café Search Hub</span>
+                <h1 className="text-xl font-black text-stone-900 tracking-tight flex items-center gap-2">
+                  <Search className="w-5 h-5 text-amber-700" />
+                  Real-time Lookup System
+                </h1>
+                <p className="text-xs text-stone-500 font-medium">
+                  Showing results matching <span className="font-mono bg-amber-100 px-1.5 py-0.5 rounded text-amber-800">"{globalSearchQuery}"</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setGlobalSearchQuery("")}
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-850 text-white rounded-xl text-xs font-bold shadow transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                Clear Search
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+              {/* Left & Center: Matching POS Orders */}
+              <div className="xl:col-span-2 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs uppercase tracking-widest text-stone-500 font-extrabold flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-stone-400" />
+                    Matching Orders ({orders.filter(o => 
+                      o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                      o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                    ).length})
+                  </h3>
                 </div>
-                <div className="bg-[#B08E2B]/10 hover:bg-[#B08E2B]/20 border border-[#B08E2B]/15 text-[#B08E2B] text-xs font-black p-3 px-5 rounded-2xl flex items-center gap-2 select-none uppercase font-mono shadow-xs">
-                  PIN Auth ACTIVE: {currentUser?.pin || "****"}
-                </div>
+
+                {orders.filter(o => 
+                  o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                  o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                ).length === 0 ? (
+                  <div className="bg-white rounded-2xl p-8 border border-neutral-200 text-center text-stone-400 space-y-3">
+                    <p className="text-xs">No registered orders match your current lookup criteria.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {orders.filter(o => 
+                      o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                      o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                    ).map((order) => (
+                      <div key={order.id} className="bg-white border border-stone-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4 relative overflow-hidden">
+                        <div className={`absolute top-0 left-0 right-0 h-1.5 ${
+                          order.status === OrderStatus.PENDING_QR ? "bg-amber-500" :
+                          order.status === OrderStatus.NEW ? "bg-blue-500" :
+                          order.status === OrderStatus.SERVED ? "bg-emerald-500" :
+                          order.status === OrderStatus.CANCELLED ? "bg-red-500" : "bg-neutral-400"
+                        }`} />
+                        
+                        <div className="flex justify-between items-start pt-1">
+                          <div>
+                            <span className="text-[10px] text-stone-400 font-bold block uppercase font-mono">{order.status}</span>
+                            <h4 className="font-black text-sm text-stone-900 flex items-center gap-1.5 leading-tight">
+                              {order.orderNumber}
+                              <span className="bg-stone-100 text-stone-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                {order.tableName}
+                              </span>
+                            </h4>
+                            <span className="text-[10px] text-stone-400 font-medium block mt-0.5">
+                              Server: {order.waiterName || "Counter POS"}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-stone-400 font-bold block">TOTAL AMOUNT</span>
+                            <span className="text-sm font-black text-stone-900">${order.grandTotal.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        {/* Items listed */}
+                        <div className="bg-stone-50 rounded-xl p-3 space-y-1 text-xs">
+                          {order.items.map((it, idx) => (
+                            <div key={idx} className="flex justify-between text-stone-700">
+                              <span className="font-semibold">{it.quantity}x {it.name}</span>
+                              <span className="font-mono text-stone-500">${(it.price * it.quantity).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Order action routes */}
+                        <div className="space-y-1.5">
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              onClick={() => {
+                                setSelectedTable(order.tableId);
+                                setActiveScreen("order");
+                                setGlobalSearchQuery("");
+                              }}
+                              className="bg-stone-900 hover:bg-stone-800 text-white text-[10px] font-black py-2 rounded-lg transition shrink-0 cursor-pointer"
+                            >
+                              Open Table POS
+                            </button>
+                            <button
+                              onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
+                              className="bg-stone-100 hover:bg-stone-200 text-stone-800 text-[10px] font-black py-2 rounded-lg transition shrink-0 cursor-pointer"
+                            >
+                              Print Bill / Invoice
+                            </button>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              onClick={() => { setPrintingOrder(order); setReceiptType("kitchen"); }}
+                              className="border border-stone-250 hover:bg-stone-50 text-stone-700 text-[10px] font-bold py-2 rounded-lg transition shrink-0 cursor-pointer"
+                            >
+                              Kitchen Copy
+                            </button>
+                            <button
+                              onClick={() => { setPrintingOrder(order); setReceiptType("barista"); }}
+                              className="border border-stone-250 hover:bg-stone-50 text-stone-700 text-[10px] font-bold py-2 rounded-lg transition shrink-0 cursor-pointer"
+                            >
+                              Barista Copy
+                            </button>
+                          </div>
+
+                          {order.status === OrderStatus.SERVED && currentUser?.role !== "Waiter" && (
+                            <button
+                              onClick={() => handleOpenCheckout(order)}
+                              className="w-full bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 text-[10px] font-black py-2.5 rounded-lg text-center transition shrink-0 cursor-pointer"
+                            >
+                              Settle & Checkout Bill
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* Grid links list */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* 1. Create New Order */}
-                <button 
-                  onClick={() => {
-                    setActiveScreen("order");
-                  }}
-                  className="bg-white rounded-3xl p-6 border-2 border-transparent hover:border-[#B08E2B] shadow-xs hover:shadow-md transition-all text-left flex items-start gap-4 group"
-                >
-                  <div className="p-3 bg-amber-50 rounded-2xl text-[#3a2010] shrink-0">
-                    <ShoppingCart className="w-6 h-6" />
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="font-extrabold text-[#3a2010] group-hover:text-[#B08E2B] transition-colors text-sm uppercase">Create New Order</h3>
-                    <p className="text-xs text-neutral-500 leading-normal">
-                      Initiate a table transaction, customize customer dishes, specify comments, and submit to production.
-                    </p>
-                  </div>
-                </button>
+              {/* Right Side: Matching Restaurant Tables */}
+              <div className="space-y-4">
+                <h3 className="text-xs uppercase tracking-widest text-stone-500 font-extrabold flex items-center gap-2">
+                  <Coffee className="w-4 h-4 text-stone-400" />
+                  Matching Tables ({tables.filter(t => 
+                    t.name.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                    t.tableId.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                    (t.assignedWaiter && t.assignedWaiter.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                  ).length})
+                </h3>
 
-                {/* 2. Search Orders */}
-                <button 
-                  onClick={() => {
-                    setQueueTab("Pending");
-                    setActiveScreen("queue");
-                  }}
-                  className="bg-white rounded-3xl p-6 border-2 border-transparent hover:border-[#B08E2B] shadow-xs hover:shadow-md transition-all text-left flex items-start gap-4 group"
-                >
-                  <div className="p-3 bg-blue-50 rounded-2xl text-blue-800 shrink-0">
-                    <Search className="w-6 h-6" />
+                {tables.filter(t => 
+                  t.name.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  t.tableId.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                  (t.assignedWaiter && t.assignedWaiter.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                ).length === 0 ? (
+                  <div className="bg-white rounded-2xl p-8 border border-neutral-200 text-center text-stone-400">
+                    <p className="text-xs">No active tables match your search query.</p>
                   </div>
-                  <div className="space-y-1">
-                    <h3 className="font-extrabold text-[#3a2010] group-hover:text-[#B08E2B] transition-colors text-sm uppercase">Search Orders</h3>
-                    <p className="text-xs text-neutral-500 leading-normal">
-                      Instantly index orders by customer reference, invoice total, table room name, or status codes.
-                    </p>
-                  </div>
-                </button>
+                ) : (
+                  <div className="space-y-3">
+                    {tables.filter(t => 
+                      t.name.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      t.tableId.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      (t.assignedWaiter && t.assignedWaiter.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                    ).map((table) => {
+                      const isDirty = table.status === "dirty";
+                      const isOrdered = table.status === "ordered";
+                      return (
+                        <div key={table.id} className="bg-white border border-stone-250/75 rounded-2xl p-4 flex items-center justify-between shadow-xs">
+                          <div>
+                            <span className="text-[10px] bg-stone-100 text-stone-700 font-mono font-bold px-1.5 py-0.5 rounded">
+                              {table.tableId}
+                            </span>
+                            <h4 className="font-extrabold text-stone-900 text-xs mt-1">{table.name}</h4>
+                            <p className="text-[10px] text-stone-450 font-medium mt-0.5">
+                              Assigned Waiter: <span className="text-stone-700 font-semibold">{table.assignedWaiter || "None"}</span>
+                            </p>
+                          </div>
 
-                {/* 3. View Served Orders */}
-                <button 
-                  onClick={() => {
-                    setQueueTab(OrderStatus.SERVED);
-                    setActiveScreen("queue");
-                  }}
-                  className="bg-white rounded-3xl p-6 border-2 border-transparent hover:border-[#B08E2B] shadow-xs hover:shadow-md transition-all text-left flex items-start gap-4 group"
-                >
-                  <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-800 shrink-0">
-                    <CheckCircle className="w-6 h-6" />
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded-full ${
+                              isDirty ? "bg-amber-100 text-amber-800" :
+                              isOrdered ? "bg-stone-100 text-cyan-800" :
+                              "bg-emerald-100 text-emerald-800"
+                            }`}>
+                              {table.status}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setSelectedTable(table.tableId);
+                                setActiveScreen("order");
+                                setGlobalSearchQuery("");
+                              }}
+                              className="px-3 py-1.5 bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 rounded-lg text-[10px] font-black transition cursor-pointer"
+                            >
+                              Launch POS
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="space-y-1">
-                    <h3 className="font-extrabold text-[#3a2010] group-hover:text-[#B08E2B] transition-colors text-sm uppercase">View Served Orders</h3>
-                    <p className="text-xs text-neutral-500 leading-normal">
-                      Audit past server-carried plates. Track delivery status variables to tables and confirm receipts.
-                    </p>
-                  </div>
-                </button>
-
-                {/* 4. View Paid Orders (Read-Only) */}
-                <button 
-                  onClick={() => {
-                    setQueueTab(OrderStatus.PAID);
-                    setActiveScreen("queue");
-                  }}
-                  className="bg-white rounded-3xl p-6 border-2 border-transparent hover:border-[#B08E2B] shadow-xs hover:shadow-md transition-all text-left flex items-start gap-4 group"
-                >
-                  <div className="p-3 bg-violet-50 rounded-2xl text-violet-800 shrink-0">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="font-extrabold text-[#3a2010] group-hover:text-[#B08E2B] transition-colors text-sm uppercase">View Paid Orders</h3>
-                    <p className="text-xs text-neutral-500 leading-normal">
-                      Access read-only financial ledger statements, invoices, and shift payment archives for historical date.
-                    </p>
-                  </div>
-                </button>
-
+                )}
               </div>
             </div>
           </div>
         ) : activeScreen === "order" ? (
           /* ==============================================
-             1. CREATE ORDER SCREEN (POS catalog layout)
+             1. CREATING AN ORDER PANEL (Waiter & Cashier POS)
              ============================================== */
           <>
-            {/* Catalog Grid panel (Left) */}
-            <div className="flex-1 flex flex-col min-w-0 bg-neutral-100/60 p-6 overflow-hidden">
-              <div className="flex flex-col md:flex-row gap-4 mb-6 shrink-0 justify-between">
-                
-                {/* Tables fast pick lists */}
-                <div className="flex-1">
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1.5">Pick Room Table:</span>
-                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                    {tables.filter(t => t.isEnabled !== false).map((tbl) => {
-                      const hasActiveOrder = orders.some(o => o.tableId === tbl.tableId && o.status !== OrderStatus.PAID);
-                      return (
-                        <button
-                          key={tbl.tableId}
-                          type="button"
-                          onClick={() => setSelectedTable(tbl.tableId)}
-                          className={`px-3 py-2 rounded-xl text-xs font-black transition-all shrink-0 border uppercase flex flex-col items-center justify-center min-w-[70px] ${
-                            selectedTable === tbl.tableId
-                              ? "bg-amber-950 text-white border-amber-950 shadow-sm"
-                              : hasActiveOrder
-                              ? "bg-amber-100 text-amber-900 border-amber-200"
-                              : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
-                          }`}
-                        >
-                          <span className="text-[9px] font-black">{tbl.name}</span>
-                          {hasActiveOrder && (
-                            <span className="text-[7px] text-amber-800 tracking-tighter mt-0.5">Occupied</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Local search inside POS */}
-                <div className="w-full md:w-64">
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase block mb-1.5">Filter Products:</span>
-                  <div className="relative">
-                    <input 
-                      type="text"
-                      placeholder="Type name to search..."
-                      value={productSearch}
-                      onChange={(e) => setProductSearch(e.target.value)}
-                      className="w-full bg-white border border-neutral-200 rounded-xl p-2.5 pl-9 outline-none text-xs font-extrabold focus:border-amber-950"
-                    />
-                    <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-3 pointer-events-none" />
-                  </div>
-                </div>
-
+            {/* Left sidebar categories */}
+            <div className="w-56 bg-white border-r border-neutral-200 flex flex-col shrink-0">
+              <div className="p-4 border-b border-neutral-100 uppercase tracking-widest text-neutral-400 font-extrabold text-[10px]">
+                Menu Sections
               </div>
-
-              {/* Menu horizontal categories scrollbar */}
-              <div className="flex gap-2 overflow-x-auto pb-4 shrink-0 scrollbar-none">
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 <button
                   type="button"
                   onClick={() => setOrderCategory("all")}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all border ${
-                    orderCategory === "all"
-                      ? "bg-amber-950 text-white border-amber-950 shadow-sm"
-                      : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
+                  className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                    orderCategory === "all" ? "bg-amber-100/70 text-amber-950" : "text-neutral-600 hover:bg-stone-50"
                   }`}
                 >
-                  All catalog
+                  <span>All Dishes</span>
+                  <span className="text-[10px] bg-neutral-200/50 text-neutral-500 px-1.5 py-0.5 rounded-md font-extrabold">
+                    {products.filter(p=>!p.isArchived && p.available).length}
+                  </span>
                 </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setOrderCategory(cat.id)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all border flex items-center gap-1.5 ${
-                      orderCategory === cat.id
-                        ? "bg-amber-950 text-white border-amber-950 shadow-sm"
-                        : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50"
-                    }`}
-                  >
-                    <span>{cat.name}</span>
-                  </button>
-                ))}
+
+                {categories.map((cat) => {
+                  const count = products.filter(p => p.categoryId === cat.id && !p.isArchived && p.available).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setOrderCategory(cat.id)}
+                      className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                        orderCategory === cat.id ? "bg-amber-100/70 text-amber-950" : "text-neutral-600 hover:bg-stone-50"
+                      }`}
+                    >
+                      <span className="truncate">{cat.name}</span>
+                      <span className="text-[10px] bg-neutral-200/50 text-neutral-500 px-1.5 py-0.5 rounded-md font-extrabold">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-
-              {/* Products list selection grid */}
-              <div className="flex-1 overflow-y-auto min-h-0">
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
-                  {products
-                    .filter(p => !p.isArchived)
-                    .filter(p => orderCategory === "all" || p.categoryId === orderCategory)
-                    .filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()))
-                    .map((p) => (
-                      <div 
-                        key={p.id}
-                        onClick={() => handleAddTrayItem(p)}
-                        className={`bg-white rounded-2xl p-4 border border-neutral-200 cursor-pointer hover:border-amber-900 hover:shadow-md transition duration-250 flex flex-col justify-between h-36 relative overflow-hidden active:scale-95 group ${
-                          !p.available ? "opacity-50 !cursor-not-allowed select-none" : ""
-                        }`}
-                      >
-                        {/* Sold out overlay */}
-                        {!p.available && (
-                          <div className="absolute inset-0 bg-neutral-900/5 backdrop-blur-3xs z-10 flex items-center justify-center">
-                            <span className="bg-neutral-900 text-white font-black text-[8px] tracking-widest px-2 py-1 roundeduppercase rounded-md">
-                              SOLD OUT
-                            </span>
-                          </div>
-                        )}
-
-                        <div>
-                          <div className="flex justify-between items-start gap-1">
-                            <h4 className="font-extrabold text-[12px] text-neutral-800 leading-tight group-hover:text-amber-955 transition">
-                              {p.name}
-                            </h4>
-                            <span className="text-[10px] bg-neutral-100 px-1 rounded font-black text-neutral-500 uppercase flex shrink-0">
-                              {p.isDrink ? "Drink" : "Food"}
-                            </span>
-                          </div>
-                          {p.description && (
-                            <p className="text-[10px] text-neutral-400 mt-1 line-clamp-2 leading-relaxed font-medium">
-                              {p.description}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex justify-between items-end border-t border-neutral-100 pt-2 shrink-0">
-                          <span className="font-black text-sm text-neutral-900 font-mono">
-                            ${p.price.toFixed(2)}
-                          </span>
-                          <span className="w-7 h-7 bg-amber-50 group-hover:bg-amber-950 text-amber-950 group-hover:text-white rounded-xl flex items-center justify-center transition">
-                            <Plus className="w-4 h-4" />
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-
             </div>
 
-            {/* Current Order Tray Sidebar (Right) */}
-            <div className="w-96 bg-white border-l border-neutral-200 shadow-xl flex flex-col h-full shrink-0 overflow-hidden">
-              
-              <div className="p-4 border-b border-neutral-150 shrink-0 bg-neutral-50/50 flex flex-col gap-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-widest font-black block">Active POS Tray</span>
-                  <span className="px-2 py-0.5 bg-amber-100 text-amber-950 text-[10px] font-black uppercase rounded-md shadow-3xs">
-                    {selectedTable}
+            {/* Center Product menu grids */}
+            <div className="flex-1 flex flex-col bg-neutral-50">
+              {/* Product searches */}
+              <div className="p-4 border-b border-neutral-150 flex items-center gap-3 bg-white shadow-xs">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-900" />
+                  <input 
+                    type="text"
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    placeholder="Search dishes or active items..."
+                    className="w-full text-xs pl-9 pr-8 py-2.5 rounded-xl bg-orange-50 hover:bg-white focus:bg-white text-neutral-900 placeholder:text-neutral-500 border border-amber-900/40 outline-none focus:outline-none focus:ring-1 focus:ring-amber-950 focus:border-amber-950 font-bold transition"
+                  />
+                  {productSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setProductSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-neutral-200 hover:bg-neutral-300 text-neutral-800"
+                      title="Clear product search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                
+                {/* Visual tables count indicator */}
+                <div className="text-xs font-medium text-neutral-500 ml-auto flex items-center gap-1.5">
+                  <span className="font-bold text-neutral-800">Default VAT Rate:</span>
+                  <span className="bg-amber-50 text-amber-800 border border-amber-100 px-2 py-1 rounded font-black">
+                    {settings.vatPercentage}%
                   </span>
                 </div>
-                <h3 className="font-black text-sm text-neutral-900 uppercase">
-                  Order Details
-                </h3>
               </div>
 
-              {/* Items stack scroll */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
-                {trayItems.length === 0 ? (
-                  <div className="h-full flex flex-col justify-center items-center text-center p-6 text-neutral-400">
-                    <ShoppingCart className="w-10 h-10 opacity-20 text-neutral-500 mb-3" />
-                    <p className="text-xs font-black text-neutral-800">Tray is empty</p>
-                    <p className="text-[10px] text-neutral-400 mt-0.5 max-w-[200px]">
-                      Trigger items on the left menu catalog to compile delicious bills instantly.
-                    </p>
-                  </div>
-                ) : (
-                  trayItems.map((item) => (
-                    <div key={item.productId} className="bg-neutral-50/80 rounded-2xl p-4 border border-neutral-200/50 space-y-3.5">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <h4 className="font-extrabold text-xs text-neutral-800 leading-tight">
-                            {item.name}
+              {/* Items Grid */}
+              <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {products
+                  .filter(p => !p.isArchived && p.available)
+                  .filter(p => productSearch ? true : (orderCategory === "all" || p.categoryId === orderCategory))
+                  .filter(p => {
+                    const matchesName = p.name.toLowerCase().includes(productSearch.toLowerCase());
+                    const cat = categories.find(c => c.id === p.categoryId);
+                    const matchesCategoryName = cat ? cat.name.toLowerCase().includes(productSearch.toLowerCase()) : false;
+                    return matchesName || matchesCategoryName;
+                  })
+                  .map((p) => {
+                    const matchesTray = trayItems.find(it => it.productId === p.id);
+                    return (
+                      <div 
+                        key={p.id}
+                        onClick={() => p.available && handleAddTrayItem(p)}
+                        className={`bg-white border text-left rounded-xl overflow-hidden shadow-xs hover:shadow-md hover:border-amber-900/50 cursor-pointer active:scale-98 transition flex flex-col ${
+                          matchesTray ? "border-amber-950 ring-1 ring-amber-950" : "border-neutral-200"
+                        } ${!p.available ? "opacity-60 select-none cursor-not-allowed" : ""}`}
+                      >
+                        <div className="h-28 bg-neutral-100 relative">
+                          <img 
+                            src={p.image} 
+                            alt={p.name}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400`;
+                            }}
+                          />
+                          {!p.available && (
+                            <div className="absolute inset-0 bg-neutral-900/60 flex items-center justify-center">
+                              <span className="text-[10px] text-white bg-red-600 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                Sold out
+                              </span>
+                            </div>
+                          )}
+                          {p.isDrink ? (
+                            <span className="absolute bottom-1.5 right-1.5 p-1 bg-white border border-neutral-100 rounded-md text-[9px] font-black text-amber-800">
+                              BEVERAGE
+                            </span>
+                          ) : (
+                            <span className="absolute bottom-1.5 right-1.5 p-1 bg-white border border-neutral-100 rounded-md text-[9px] font-black text-emerald-800">
+                              FOOD
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                          <h4 className="text-xs font-black text-neutral-900 line-clamp-2 leading-tight">
+                            {p.name}
                           </h4>
-                          <span className="text-[11px] font-black font-mono text-neutral-900 mt-1 block">
-                            ${(item.price * item.quantity).toFixed(2)} 
-                            <span className="text-[9px] text-neutral-400 font-normal ml-1">(${item.price.toFixed(2)} each)</span>
-                          </span>
+                          <div className="flex items-center justify-between pt-2 border-t border-neutral-50">
+                            <span className="text-xs font-black text-neutral-900">${p.price.toFixed(2)}</span>
+                            {matchesTray && (
+                              <span className="text-[10px] bg-amber-950 text-white font-extrabold w-5 h-5 rounded-full flex items-center justify-center">
+                                {matchesTray.quantity}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
+                    );
+                })}
+              </div>
+            </div>
 
-                      <div className="flex items-center gap-1.5 bg-white border border-neutral-200 rounded-lg px-2 py-1 flex-1">
-                        <MessageSquare className="w-3 h-3 shrink-0 text-neutral-400" />
+             {/* Right side: ACTIVE Order panel */}
+            <div className="w-96 bg-white border-l border-neutral-200 flex flex-col shrink-0">
+              
+              {/* Header: Table and Waiter select */}
+              <div className="p-4 border-b border-neutral-150 space-y-3 bg-neutral-50/55">
+                {/* Order Mode selector */}
+                <div className="space-y-1">
+                  <h3 className="text-xs uppercase tracking-widest font-black text-neutral-500">
+                    Order Mode
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2 bg-neutral-200/50 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setOrderCustomerType("Dine-In")}
+                      className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer text-center ${
+                        orderCustomerType === "Dine-In"
+                          ? "bg-amber-950 text-white shadow-xs"
+                          : "text-neutral-500 hover:text-neutral-800"
+                      }`}
+                    >
+                      🛋️ Dine-In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderCustomerType("Takeaway")}
+                      className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer text-center ${
+                        orderCustomerType === "Takeaway"
+                          ? "bg-amber-950 text-white shadow-xs"
+                          : "text-neutral-500 hover:text-neutral-800"
+                      }`}
+                    >
+                      🛍️ Takeaway
+                    </button>
+                  </div>
+                </div>
+
+                {orderCustomerType === "Dine-In" ? (
+                  <div className="space-y-1">
+                    <h3 className="text-xs uppercase tracking-widest font-black text-neutral-500">
+                      Assign Restaurant Table
+                    </h3>
+                    <div className="relative flex-1 text-xs">
+                      <select 
+                        value={selectedTable}
+                        onChange={(e) => setSelectedTable(e.target.value)}
+                        className="w-full bg-white border border-neutral-200 rounded-xl p-2.5 font-bold outline-none text-neutral-800"
+                      >
+                        {tables.map(t => (
+                          <option key={t.tableId} value={t.tableId}>
+                            {t.name} ({t.tableId}) - {t.status.toUpperCase()}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 font-bold flex items-start gap-2">
+                    <span className="text-sm">📌</span>
+                    <div>
+                      <span className="block font-black uppercase text-[10px] tracking-wide text-amber-950 mb-0.5">Takeaway Mode</span>
+                      Order automatically assigned to counter virtual POS (no table reservation locked).
+                    </div>
+                  </div>
+                )}
+
+                {/* Optional Waiter Assign option for cashiers/managers/devs */}
+                {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
+                  <div className="space-y-1">
+                    <h3 className="text-xs uppercase tracking-widest font-black text-neutral-500">
+                      Assign Waiter
+                    </h3>
+                    <div className="relative flex-1 text-xs">
+                      <select 
+                        value={assignedWaiterName}
+                        onChange={(e) => setAssignedWaiterName(e.target.value)}
+                        className="w-full bg-white border border-neutral-200 rounded-xl p-2.5 font-bold outline-none text-neutral-800"
+                      >
+                        <option value="">-- Assign to Waiter --</option>
+                        {users
+                          .filter(u => u.role === UserRole.WAITER && u.isActive)
+                          .map(w => (
+                            <option key={w.id} value={w.name}>
+                              {w.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Items tray List */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {trayItems.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 text-neutral-400">
+                    <ShoppingCart className="w-12 h-12 text-neutral-300 stroke-[1.5]" />
+                    <div>
+                      <p className="font-bold text-neutral-500 text-sm">Cart is empty</p>
+                      <p className="text-xs text-neutral-400 mt-1">Select cafe dishes on left to append to order list.</p>
+                    </div>
+                  </div>
+                ) : (
+                  trayItems.map((item, index) => (
+                    <div key={index} className="bg-neutral-50 rounded-xl p-3 border border-neutral-100 space-y-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="text-xs font-black text-neutral-800">{item.name}</h4>
+                          <p className="text-[10px] text-neutral-400 font-bold">${item.price.toFixed(2)} unit</p>
+                        </div>
+                        <span className="text-xs font-extrabold text-neutral-900">
+                          ${(item.price * item.quantity).toFixed(2)}
+                        </span>
+                      </div>
+
+                      {/* Comment line input */}
+                      <div className="flex items-center gap-1.5 text-neutral-400 focus-within:text-amber-800">
+                        <MessageSquare className="w-3 h-3 shrink-0" />
                         <input 
                           type="text"
                           placeholder="Special instructions (e.g., no sugar)"
                           value={item.notes || ""}
                           onChange={(e) => handleTrayItemNote(item.productId, e.target.value)}
-                          className="w-full text-[10px] bg-white text-neutral-800 p-0 outline-none font-medium"
+                          className="w-full text-[10px] bg-white border border-neutral-150 p-1 rounded-md outline-none focus:border-amber-950 font-medium"
                         />
                       </div>
 
-                      <div className="flex justify-between items-center pt-2 border-t border-neutral-200/65">
+                      <div className="flex justify-between items-center pt-1.5 border-t border-neutral-100/50">
                         <button 
                           onClick={() => updateTrayQty(item.productId, -99)}
-                          className="text-red-500 hover:bg-red-50 p-1 px-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition"
+                          className="text-red-500 hover:bg-red-50 p-1 px-1.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition-all"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3 h-3" />
                           Remove
                         </button>
 
@@ -856,17 +891,17 @@ export const StaffDashboard: React.FC = () => {
                           <button 
                             type="button"
                             onClick={() => updateTrayQty(item.productId, -1)}
-                            className="w-7 h-7 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-full flex items-center justify-center font-bold text-neutral-800"
+                            className="w-6 h-6 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-full flex items-center justify-center font-bold text-neutral-800"
                           >
-                            <Minus className="w-3 h-3" />
+                            <Minus className="w-2.5 h-2.5" />
                           </button>
-                          <span className="text-xs font-black text-neutral-800 w-4 text-center">{item.quantity}</span>
+                          <span className="text-xs font-extrabold text-neutral-800 w-3 text-center">{item.quantity}</span>
                           <button 
                             type="button"
                             onClick={() => updateTrayQty(item.productId, 1)}
-                            className="w-7 h-7 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-full flex items-center justify-center font-bold text-neutral-800"
+                            className="w-6 h-6 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-full flex items-center justify-center font-bold text-neutral-800"
                           >
-                            <Plus className="w-3 h-3" />
+                            <Plus className="w-2.5 h-2.5" />
                           </button>
                         </div>
                       </div>
@@ -875,40 +910,22 @@ export const StaffDashboard: React.FC = () => {
                 )}
               </div>
 
-              {/* Total calculations & submitting */}
-              <div className="p-4 border-t border-neutral-150 bg-neutral-50/50 space-y-4 shrink-0">
+              {/* Total calculations */}
+              <div className="p-4 border-t border-neutral-150 bg-neutral-50/50 space-y-3 shrink-0">
                 
                 {trayItems.length > 0 && (
-                  <div className="space-y-3 font-medium text-neutral-500">
-                    <div className="flex justify-between text-xs">
+                  <div className="space-y-1.5 text-xs font-medium text-neutral-500">
+                    <div className="flex justify-between">
                       <span>Subtotal</span>
-                      <span className="font-extrabold text-neutral-800">${traySubtotal.toFixed(2)}</span>
+                      <span className="font-bold text-neutral-800">${traySubtotal.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-xs">
+                    <div className="flex justify-between">
                       <span>VAT ({settings.vatPercentage}%)</span>
-                      <span className="font-extrabold text-neutral-900">${trayVat.toFixed(2)}</span>
+                      <span className="font-bold text-neutral-900">${trayVat.toFixed(2)}</span>
                     </div>
-                    
-                    {/* Waiter assignment dropdown for Cashiers */}
-                    {currentUser?.role === "Cashier" && (
-                      <div className="space-y-1.5 border-t border-neutral-150 pt-3">
-                        <label className="text-[10px] font-black text-neutral-500 uppercase block">Assign Waiter Shift:</label>
-                        <select
-                          value={assignedWaiterName}
-                          onChange={(e) => setAssignedWaiterName(e.target.value)}
-                          className="w-full bg-white border border-neutral-250 rounded-xl p-2.5 text-xs font-black outline-none cursor-pointer focus:border-amber-950 text-neutral-800"
-                        >
-                          <option value="">Counter POS (Self-service)</option>
-                          {users.filter(u => u.role === "Waiter" && u.isActive).map(u => (
-                            <option key={u.id} value={u.name}>{u.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="flex justify-between text-sm font-black text-neutral-905 border-t border-neutral-200 pt-3">
+                    <div className="flex justify-between text-base font-black text-neutral-900 border-t border-neutral-200 pt-2">
                       <span>Grand Total</span>
-                      <span className="text-base text-amber-955">${trayTotal.toFixed(2)}</span>
+                      <span>${trayTotal.toFixed(2)}</span>
                     </div>
                   </div>
                 )}
@@ -916,7 +933,7 @@ export const StaffDashboard: React.FC = () => {
                 <button 
                   onClick={handleSubmitTray}
                   disabled={trayItems.length === 0}
-                  className={`w-full font-bold py-4 rounded-xl shadow-xs transition active:scale-95 flex items-center justify-center gap-2 text-xs uppercase tracking-wider ${
+                  className={`w-full font-bold py-3.5 rounded-xl shadow-xs transition active:scale-95 flex items-center justify-center gap-2 text-xs uppercase tracking-wider ${
                     trayItems.length > 0 
                       ? "bg-amber-950 hover:bg-amber-900 text-white cursor-pointer" 
                       : "bg-neutral-200 text-neutral-400 cursor-not-allowed"
@@ -931,49 +948,47 @@ export const StaffDashboard: React.FC = () => {
           </>
         ) : (
           /* ==============================================
-             2. ACTIVE ORDER QUEUE MANAGEMENT (Tabs)
+             2. ACTIVE ORDER QUEUE MANAGEMENT (Tabs 1 to 4)
              ============================================== */
           <div className="flex-1 flex flex-col overflow-hidden">
             
-            {/* Horizontal tabs selector & business date picker */}
-            <div className="bg-white border-b border-neutral-200 px-6 py-3 shrink-0 flex flex-col md:flex-row gap-3 items-start md:items-center justify-between overflow-x-auto">
-              <div className="flex flex-wrap gap-2">
+            {/* Horizontal sub-tabs selector */}
+            <div className="bg-white border-b border-neutral-200 px-6 py-2 shrink-0 flex items-center justify-between overflow-x-auto">
+              <div className="flex gap-2">
                 
-                {/* Pending QR Approval tab */}
-                {currentUser?.role !== "Waiter" && (
-                  <button 
-                    onClick={() => setQueueTab("Pending")}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
-                      queueTab === "Pending" 
-                        ? "bg-amber-500 text-black border-amber-500 shadow-xs" 
-                        : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100/50"
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
-                    Pending QR Orders
-                    <span className="ml-1 bg-white border border-amber-300 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                      {orders.filter(o => o.status === OrderStatus.PENDING_QR && (!o.businessDate || o.businessDate === selectedBusinessDate)).length}
-                    </span>
-                  </button>
-                )}
+                {/* Tab 4: QR self-orders Pending (Orange) */}
+                <button 
+                  onClick={() => setQueueTab("Pending")}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                    queueTab === "Pending" 
+                      ? "bg-amber-500 text-black border-amber-500 shadow-sm" 
+                      : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100/50"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
+                  Pending QR Orders
+                  <span className="ml-1 bg-white border border-amber-300 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                    {orders.filter(o => o.status === OrderStatus.PENDING_QR).length}
+                  </span>
+                </button>
 
-                {/* Tab 1: Confirmed NEW Orders (Blue) */}
+                {/* Tab 1: New order list confirmed (Blue) */}
                 <button 
                   onClick={() => setQueueTab(OrderStatus.NEW)}
                   className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
                     queueTab === OrderStatus.NEW 
-                      ? "bg-blue-600 text-white border-blue-600 shadow-xs" 
+                      ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
                       : "bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100/50"
                   }`}
                 >
                   <span className="w-2.5 h-2.5 bg-blue-500 rounded-full" />
                   New Orders
                   <span className="ml-1 bg-white border border-blue-300 text-blue-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.NEW && (!o.businessDate || o.businessDate === selectedBusinessDate)).length}
+                    {orders.filter(o => o.status === OrderStatus.NEW).length}
                   </span>
                 </button>
 
-                {/* Tab 2: Served Orders (Green) */}
+                {/* Tab 2: Served (Green) */}
                 <button 
                   onClick={() => setQueueTab(OrderStatus.SERVED)}
                   className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
@@ -982,14 +997,14 @@ export const StaffDashboard: React.FC = () => {
                       : "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100/50"
                   }`}
                 >
-                  <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full" />
+                  <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping-slow" />
                   Served to Table
                   <span className="ml-1 bg-white border border-emerald-305 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.SERVED && (!o.businessDate || o.businessDate === selectedBusinessDate)).length}
+                    {orders.filter(o => o.status === OrderStatus.SERVED).length}
                   </span>
                 </button>
 
-                {/* Tab 3: Paid & Complete History (Gray) */}
+                {/* Tab 3: Paid & complete history (Gray) */}
                 <button 
                   onClick={() => setQueueTab(OrderStatus.PAID)}
                   className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
@@ -1001,34 +1016,37 @@ export const StaffDashboard: React.FC = () => {
                   <span className="w-2.5 h-2.5 bg-neutral-400 rounded-full" />
                   Paid History
                   <span className="ml-1 bg-white border border-neutral-300 text-neutral-600 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.PAID && o.businessDate === selectedBusinessDate).length}
+                    {orders.filter(o => o.status === OrderStatus.PAID).length}
+                  </span>
+                </button>
+
+                {/* Tab 5: Cancelled Orders (Red) */}
+                <button 
+                  onClick={() => setQueueTab(OrderStatus.CANCELLED)}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                    queueTab === OrderStatus.CANCELLED 
+                      ? "bg-red-600 text-white border-red-600 shadow-xs" 
+                      : "bg-red-50 text-red-700 border-red-100 hover:bg-red-100/50"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full" />
+                  Cancelled Orders
+                  <span className="ml-1 bg-white border border-red-300 text-red-700 text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                    {orders.filter(o => o.status === OrderStatus.CANCELLED).length}
                   </span>
                 </button>
 
               </div>
               
-              {/* Datepicker calendar selector to consult historical shifts */}
-              <div className="flex items-center gap-2 self-stretch md:self-auto bg-neutral-100 p-1.5 rounded-xl border border-neutral-200 shrink-0">
-                <span className="text-[10px] uppercase font-black text-neutral-500 pl-1">Shift Day:</span>
-                <input
-                  type="date"
-                  value={selectedBusinessDate}
-                  onChange={(e) => setSelectedBusinessDate(e.target.value)}
-                  className="bg-white border border-neutral-300 rounded-lg text-xs font-black p-1.5 outline-none focus:border-amber-950 cursor-pointer text-stone-800 font-mono"
-                />
+              <div className="text-[10px] text-neutral-400 font-bold uppercase invisible md:visible">
+                Tracking {filteredOrders.length} records
               </div>
             </div>
 
             {/* Displaying orders details inside grid cards */}
             <div className="flex-1 overflow-y-auto p-6 bg-neutral-100 flex flex-col">
               
-              {/* Distinct search bar matching active selected tab filters and prefacing */}
-              {queueTab === "Pending" && renderCustomSearchBar(pendingSearchQuery, setPendingSearchQuery, pendingSearchMode, setPendingSearchMode)}
-              {queueTab === OrderStatus.NEW && renderCustomSearchBar(newSearchQuery, setNewSearchQuery, newSearchMode, setNewSearchMode)}
-              {queueTab === OrderStatus.SERVED && renderCustomSearchBar(servedSearchQuery, setServedSearchQuery, servedSearchMode, setServedSearchMode)}
-              {queueTab === OrderStatus.PAID && renderCustomSearchBar(paidSearchQuery, setPaidSearchQuery, paidSearchMode, setPaidSearchMode)}
-
-              {displayedOrders.length === 0 ? (
+              {filteredOrders.length === 0 ? (
                 <div className="flex-1 flex flex-col justify-center items-center text-center p-12 bg-white rounded-2xl shadow-xs border border-neutral-200/50 max-w-lg mx-auto w-full my-auto space-y-4">
                   <div className="w-14 h-14 rounded-full bg-neutral-50 flex items-center justify-center">
                     <FileText className="w-7 h-7 text-neutral-300" />
@@ -1036,13 +1054,13 @@ export const StaffDashboard: React.FC = () => {
                   <div>
                     <h3 className="font-extrabold text-neutral-800 text-sm">No active entries</h3>
                     <p className="text-xs text-neutral-400 mt-1 leading-normal max-w-xs">
-                      There are currently no orders under the <b>{queueTab === "Pending" ? "Pending QR" : queueTab}</b> status matching filters.
+                      There are currently no orders registered under the <b>{queueTab}</b> status.
                     </p>
                   </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-7xl w-full mx-auto">
-                  {displayedOrders.map((order) => (
+                  {filteredOrders.map((order) => (
                     <div 
                       key={order.id} 
                       className={`bg-white rounded-2xl p-5 shadow-xs border flex flex-col justify-between space-y-4 relative overflow-hidden transition-all duration-300 ${
@@ -1055,26 +1073,26 @@ export const StaffDashboard: React.FC = () => {
                       <div className={`absolute top-0 left-0 right-0 h-1.5 ${
                         order.status === OrderStatus.PENDING_QR ? "bg-amber-500" :
                         order.status === OrderStatus.NEW ? "bg-blue-500" :
-                        order.status === OrderStatus.SERVED ? "bg-emerald-500" : "bg-neutral-600"
+                        order.status === OrderStatus.SERVED ? "bg-emerald-500" :
+                        order.status === OrderStatus.CANCELLED ? "bg-red-500" : "bg-neutral-400"
                       }`} />
 
-                       {/* Polished header with prominent Table Number & Waiter Name */}
-                      <div className="flex justify-between items-start pt-1.5 pb-2.5 border-b border-neutral-100 mb-3.5">
+                      {/* Topmeta */}
+                      <div className="flex justify-between items-start pt-1.5">
                         <div>
-                          {/* Table Name prominently highlighted at the top */}
-                          <div className="flex items-center gap-1.5">
-                            <span className="bg-amber-500 text-stone-950 text-xs font-black px-2.5 py-0.5 rounded-md uppercase tracking-wide">
+                          <span className="text-[10px] text-neutral-400 font-bold block">
+                            ORDER REFS
+                          </span>
+                          <h4 className="font-black text-sm text-neutral-900 flex items-center gap-1.5">
+                            {order.orderNumber}
+                            <span className="bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-[10px] font-black px-2 py-0.5 rounded-full">
                               {order.tableName}
                             </span>
-                          </div>
-                          {/* Waiter Name directly below Table Number */}
-                          <div className="text-[11px] text-neutral-500 font-bold mt-1.5 flex items-center gap-1">
-                            Waiter: <span className="text-neutral-800 font-extrabold">{order.waiterName || "Unassigned"}</span>
-                          </div>
+                          </h4>
                         </div>
-                        <div className="text-right flex flex-col items-end">
-                          <span className="text-[10px] font-bold text-neutral-400">{order.orderNumber}</span>
-                          <span className="text-sm font-black text-[#B08E2B] mt-1">${order.grandTotal.toFixed(2)}</span>
+                        <div className="text-right">
+                          <span className="text-[10px] text-neutral-400 font-bold block">TOTAL AMOUNT</span>
+                          <span className="text-sm font-black text-neutral-900">${order.grandTotal.toFixed(2)}</span>
                         </div>
                       </div>
 
@@ -1089,9 +1107,9 @@ export const StaffDashboard: React.FC = () => {
                                   <div className="font-semibold text-neutral-800 flex items-center gap-1">
                                     {item.name}
                                     {item.isDrink ? (
-                                      <span className="bg-amber-50 text-[8px] text-amber-800 font-bold px-1 rounded uppercase">Drink</span>
+                                      <span className="bg-amber-100 text-[9px] text-amber-800 font-black px-1 rounded">D</span>
                                     ) : (
-                                      <span className="bg-emerald-50 text-[8px] text-emerald-800 font-bold px-1 rounded uppercase">Food</span>
+                                      <span className="bg-emerald-100 text-[9px] text-emerald-800 font-black px-1 rounded">F</span>
                                     )}
                                   </div>
                                   {item.notes && (
@@ -1140,27 +1158,23 @@ export const StaffDashboard: React.FC = () => {
                           /* Serving actions */
                           <div className="space-y-2 w-full">
                             <div className="grid grid-cols-3 gap-2">
-                              {currentUser?.role !== "Waiter" && (
-                                <button 
-                                  onClick={() => { setPrintingOrder(order); setReceiptType("kitchen"); }}
-                                  className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
-                                  title="Print Kitchen ticket"
-                                >
-                                  <Flame className="w-3.5 h-3.5 text-orange-500" />
-                                  Kitchen
-                                </button>
-                              )}
+                              <button 
+                                onClick={() => { setPrintingOrder(order); setReceiptType("kitchen"); }}
+                                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
+                                title="Print Kitchen duplicate"
+                              >
+                                <Flame className="w-3.5 h-3.5 text-orange-500" />
+                                Kitchen
+                              </button>
                               
-                              {currentUser?.role !== "Waiter" && (
-                                <button 
-                                  onClick={() => { setPrintingOrder(order); setReceiptType("barista"); }}
-                                  className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
-                                  title="Print Barista ticket"
-                                >
-                                  <Cup className="w-3.5 h-3.5 text-blue-500" />
-                                  Barista
-                                </button>
-                              )}
+                              <button 
+                                onClick={() => { setPrintingOrder(order); setReceiptType("barista"); }}
+                                className="bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
+                                title="Print Barista duplicate"
+                              >
+                                <Cup className="w-3.5 h-3.5 text-blue-500" />
+                                Barista
+                              </button>
 
                               <button 
                                 onClick={() => {
@@ -1168,19 +1182,26 @@ export const StaffDashboard: React.FC = () => {
                                   setPrintKitchenChecked(true);
                                   setPrintBaristaChecked(true);
                                 }}
-                                className="col-span-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1 transition"
                               >
                                 Mark Served
                               </button>
                             </div>
-                            
-                            {/* Waiters cannot edit order items */}
-                            {currentUser?.role !== "Waiter" && (
+                            <button 
+                              onClick={() => startEditingPending(order)}
+                              className="w-full bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg transition shadow-xs text-center flex items-center justify-center gap-1"
+                            >
+                              Edit / Change Items
+                            </button>
+                            {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
                               <button 
-                                onClick={() => startEditingPending(order)}
-                                className="w-full bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg transition shadow-xs text-center flex items-center justify-center gap-1"
+                                onClick={() => {
+                                  setCancellingOrder(order);
+                                  setCancelReasonText("");
+                                }}
+                                className="w-full bg-red-50 hover:bg-red-100/80 border border-red-200 text-red-600 text-[11px] font-black py-2 rounded-lg transition-all"
                               >
-                                Edit / Change Items
+                                Cancel Order
                               </button>
                             )}
                           </div>
@@ -1196,61 +1217,94 @@ export const StaffDashboard: React.FC = () => {
                                 className="bg-white hover:bg-neutral-50 border border-neutral-250 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
                               >
                                 <Printer className="w-3.5 h-3.5" />
-                                Print Invoice
+                                View Bill Info
                               </button>
-                              
-                              {/* Waiters cannot edit active order items */}
-                              {currentUser?.role !== "Waiter" ? (
-                                <button 
-                                  onClick={() => startEditingPending(order)}
-                                  className="bg-white hover:bg-neutral-50 border border-neutral-250 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
-                                >
-                                  Edit Items
-                                </button>
-                              ) : (
-                                <div className="bg-neutral-100 border border-neutral-200 rounded-lg text-[9px] text-neutral-400 flex items-center justify-center uppercase font-black px-2">
-                                  Waiter Shift Checked
-                                </div>
-                              )}
+                              <button 
+                                onClick={() => startEditingPending(order)}
+                                className="bg-white hover:bg-neutral-50 border border-neutral-250 text-neutral-700 text-[11px] font-black py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition shadow-xs"
+                              >
+                                Edit Items
+                              </button>
                             </div>
                             
                             {/* Payout channels via Settle and Checkout modal */}
-                            {currentUser?.role !== "Waiter" && (
-                              <button 
+                            <button 
                                 onClick={() => handleOpenCheckout(order)}
-                                className="w-full bg-amber-500 hover:bg-amber-600 text-stone-950 text-[11px] font-black py-3 rounded-lg shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                                className="w-full bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 text-[11px] font-black py-3 rounded-lg shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              Settle & Checkout Bill
+                            </button>
+
+                            {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
+                              <button 
+                                onClick={() => {
+                                  setCancellingOrder(order);
+                                  setCancelReasonText("");
+                                }}
+                                className="w-full bg-red-50 hover:bg-red-100/80 border border-red-200 text-red-600 text-[11px] font-black py-2 rounded-lg transition-all"
                               >
-                                <CheckCircle className="w-4 h-4" />
-                                Settle & Checkout Bill
+                                Cancel Order
                               </button>
+                            )}
+                          </div>
+                        )}
+
+                        {order.status === OrderStatus.CANCELLED && (
+                          /* Cancelled order state display */
+                          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-[11px] font-bold space-y-2">
+                            <div>
+                              <span className="block text-red-800 uppercase tracking-wide font-extrabold mb-1">
+                                Voided / Cancelled Order
+                              </span>
+                              <span className="text-neutral-500 font-medium block leading-normal font-sans">
+                                This order has been officially voided/cancelled by an authorized Cashier or Developer.
+                              </span>
+                            </div>
+                            {order.cancelReason && (
+                              <div className="mt-1.5 border-t border-red-200 pt-1.5 bg-red-100/40 p-2.5 rounded-lg">
+                                <span className="block text-red-800 tracking-wider font-extrabold uppercase text-[9px] font-sans">
+                                  Cancellation Reason:
+                                </span>
+                                <span className="italic block font-black text-red-950 mt-0.5 text-[11.5px] leading-relaxed">
+                                  "{order.cancelReason}"
+                                </span>
+                              </div>
                             )}
                           </div>
                         )}
 
                         {order.status === OrderStatus.PAID && (
                           /* History details display */
-                          <div className="text-[10px] text-neutral-500 bg-neutral-50 p-3 rounded-xl border border-neutral-200/50 space-y-1.5">
-                            <div>Checked out by Cashier: <b className="text-neutral-800 font-extrabold">{order.cashierName || "Siti"}</b></div>
-                            <div>Paid Category: <b className="text-neutral-800 font-extrabold">{order.paymentMethod || "Cash"}</b></div>
-                            <div>Checkout Time: <b className="text-neutral-801 font-extrabold">{new Date(order.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b></div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                          <div className="text-[10px] text-neutral-500 bg-neutral-50 p-2 rounded-lg space-y-0.5">
+                            <div>Checked out by Cashier: <b className="text-neutral-800">{order.cashierName || "Siti"}</b></div>
+                            <div>Paid Category: <b className="text-neutral-800">{order.paymentMethod || "Cash"}</b></div>
+                            <div>Checkout Time: <b className="text-neutral-800">{new Date(order.updatedAt).toLocaleTimeString()}</b></div>
+                            <div className="grid grid-cols-2 gap-2 mt-2">
                               <button 
                                 onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
-                                className="text-blue-600 hover:bg-blue-50/50 block py-1.5 rounded-lg font-extrabold text-center uppercase border border-blue-100 text-[10px]"
+                                className="text-blue-600 hover:underline hover:bg-blue-50/50 block py-1.5 rounded font-extrabold text-center uppercase border border-blue-100 text-[10px]"
                               >
                                 Reprint Bill
                               </button>
-                              
-                              {/* Waiters strictly cannot edit past paid orders */}
-                              {currentUser?.role !== "Waiter" && (
-                                <button 
-                                  onClick={() => startEditingPending(order)}
-                                  className="text-neutral-600 hover:bg-neutral-100 block py-1.5 rounded-lg font-extrabold text-center uppercase border border-neutral-250 text-[10px]"
-                                >
-                                  Edit Items
-                                </button>
-                              )}
+                              <button 
+                                onClick={() => startEditingPending(order)}
+                                className="text-neutral-600 hover:bg-neutral-105 block py-1.5 rounded font-extrabold text-center uppercase border border-neutral-250 text-[10px]"
+                              >
+                                Edit Items
+                              </button>
                             </div>
+                            {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
+                              <button 
+                                onClick={() => {
+                                  setCancellingOrder(order);
+                                  setCancelReasonText("");
+                                }}
+                                className="w-full mt-2 bg-red-50 hover:bg-red-100/80 border border-red-200 text-red-600 text-[11px] font-black py-2 rounded-lg transition-all"
+                              >
+                                Cancel Order
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1266,7 +1320,7 @@ export const StaffDashboard: React.FC = () => {
 
       {/* Checkout Modal overlay */}
       {paymentActiveOrder && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-3xs z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-stone-900 border border-stone-800 text-white rounded-3xl p-6 max-w-lg w-full shadow-2xl relative space-y-6">
             <button 
               onClick={() => setPaymentActiveOrder(null)}
@@ -1341,7 +1395,7 @@ export const StaffDashboard: React.FC = () => {
               <div className="bg-stone-950 border border-stone-800 p-4 rounded-xl flex justify-between items-center">
                 <div>
                   <span className="text-[9px] text-[#E5C158] font-black uppercase tracking-widest block">Net total to be collected (VAT Incl.)</span>
-                  <span className="text-[9px] text-stone-500 font-bold uppercase animate-pulse">Subtotal: ${paymentActiveOrder.subtotal.toFixed(2)} | Tax: ${paymentActiveOrder.vatAmount.toFixed(2)}</span>
+                  <span className="text-[9px] text-stone-500 font-bold uppercase">Subtotal: ${paymentActiveOrder.subtotal.toFixed(2)} | Tax: ${paymentActiveOrder.vatAmount.toFixed(2)}</span>
                 </div>
                 <div className="text-right">
                   <span className="text-xl font-black text-[#E5C158] font-mono">
@@ -1375,7 +1429,7 @@ export const StaffDashboard: React.FC = () => {
                     className={`p-2 border rounded-xl text-left transition transform active:scale-95 flex flex-col justify-between h-14 cursor-pointer ${
                       paymentMethod === ch.name 
                         ? "bg-[#E5C158]/10 border-[#E5C158] text-white" 
-                        : "bg-stone-950 border-stone-800 text-stone-300 hover:text-white"
+                        : "bg-stone-950 border-stone-800 text-stone-400 hover:text-white"
                     }`}
                   >
                     <span className="font-extrabold text-[10px] leading-tight block">{ch.name}</span>
@@ -1449,37 +1503,147 @@ export const StaffDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Custom Order Cancellation Modal with Auditing Reason */}
+      {cancellingOrder && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[60] flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-800 text-white rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-5">
+            <button 
+              onClick={() => { setCancellingOrder(null); setCancelReasonText(""); }}
+              className="absolute top-4 right-4 p-1 rounded-full text-stone-450 hover:text-white hover:bg-stone-800 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-red-950/40 border border-red-900/50 rounded-2xl flex items-center justify-center text-red-500">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[9px] text-red-400 font-bold font-mono uppercase tracking-widest block">Audit Safe Protocol</span>
+                <h2 className="text-base font-black text-white uppercase tracking-tight">
+                  Cancel Order {cancellingOrder.orderNumber}
+                </h2>
+                <p className="text-[11px] text-stone-400 mt-1">
+                  Table Reference: <span className="font-bold text-stone-200">{cancellingOrder.tableName}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-stone-950 border border-stone-850 p-4 rounded-xl space-y-3">
+              <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
+                Select or Enter Cancellation Reason
+              </label>
+              
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                {[
+                  "Customer changed mind",
+                  "Ordered by mistake / duplicate",
+                  "Kitchen stock out of items",
+                  "Wrong table selected",
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setCancelReasonText(preset)}
+                    className={`py-1.5 px-2.5 rounded-lg border text-left font-semibold transition ${
+                      cancelReasonText === preset 
+                        ? "bg-red-950/30 border-red-800 text-red-300" 
+                        : "bg-stone-900 border-stone-800 text-stone-400 hover:border-stone-700 hover:text-stone-200"
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+
+              <div className="pt-2">
+                <label className="text-[9px] font-bold text-stone-500 uppercase tracking-widest block mb-1.5">
+                  Detailed Explanation / Remark:
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={cancelReasonText}
+                  onChange={(e) => setCancelReasonText(e.target.value)}
+                  placeholder="Explain why this order is cancelled/voided..."
+                  className="w-full bg-stone-900 border border-stone-800 p-2.5 rounded-xl text-xs outline-none text-white focus:border-red-500 font-sans leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <button
+                type="button"
+                onClick={() => { setCancellingOrder(null); setCancelReasonText(""); }}
+                className="py-3 bg-stone-950 border border-stone-800 hover:bg-stone-800 font-bold rounded-xl text-stone-400 hover:text-white transition cursor-pointer text-center"
+              >
+                No, Keep Order
+              </button>
+              
+              <button
+                type="button"
+                disabled={!cancelReasonText.trim()}
+                onClick={() => {
+                  if (cancelReasonText.trim()) {
+                    cancelOrder(cancellingOrder.id, cancelReasonText.trim());
+                    setCancellingOrder(null);
+                    setCancelReasonText("");
+                  }
+                }}
+                className={`py-3 font-black rounded-xl transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 text-center ${
+                  cancelReasonText.trim()
+                    ? "bg-red-650 hover:bg-red-600 text-white cursor-pointer"
+                    : "bg-stone-800 text-stone-500 cursor-not-allowed"
+                }`}
+              >
+                <Trash2 className="w-4 h-4" />
+                Confirm Void
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Editing dialog modal (For cashiers to customize Pending QR Orders prior approval) */}
       {editingOrder && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-3xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl relative overflow-hidden flex flex-col h-[85vh] text-neutral-800">
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-2 md:p-4">
+          <div className="bg-white rounded-3xl shadow-2xl relative w-full max-w-5xl max-h-[95vh] md:max-h-[90vh] flex flex-col overflow-hidden">
             
-            {/* Header banner */}
-            <div className="px-6 py-4 bg-neutral-900 text-white shrink-0 flex justify-between items-center">
+            {/* Modal Header */}
+            <div className="p-4 md:p-5 border-b border-neutral-100 flex items-center justify-between shrink-0 bg-neutral-50/50">
               <div>
-                <span className="text-[9px] text-[#E5C158] font-bold font-mono tracking-wider block uppercase">Modification & Item Auditing Log</span>
-                <h3 className="text-sm font-black flex items-center gap-2">
-                  Ref: <span className="text-neutral-205 font-extrabold">{editingOrder.orderNumber}</span>
-                  <span>|</span>
-                  Table: <span className="text-neutral-205 font-extrabold">{editingOrder.tableName}</span>
-                  <span>|</span>
-                  Status: <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-[9px] uppercase">{editingOrder.status}</span>
-                </h3>
+                <h2 className="text-base md:text-lg font-black text-neutral-900 flex items-center gap-2">
+                  <span className="p-1.5 rounded-lg bg-amber-50 text-amber-950">
+                    <FileText className="w-4 h-4 md:w-5 md:h-5" />
+                  </span>
+                  Edit / Adjust Order Items
+                </h2>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-[11px] md:text-xs">
+                  <span className="text-neutral-500 font-bold">
+                    Ref: <span className="text-neutral-900 font-extrabold">{editingOrder.orderNumber}</span>
+                  </span>
+                  <span className="text-neutral-500 font-bold">
+                    Table: <span className="text-neutral-900 font-extrabold">{editingOrder.tableName}</span>
+                  </span>
+                  <span className="text-neutral-500 font-bold flex items-center gap-1">
+                    Status: <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-[9px] uppercase">{editingOrder.status}</span>
+                  </span>
+                </div>
               </div>
               <button 
                 onClick={() => setEditingOrder(null)}
-                className="text-neutral-400 hover:text-white p-1 hover:bg-neutral-800 rounded-full transition"
+                className="p-2 rounded-full text-neutral-400 hover:text-black hover:bg-neutral-100 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Core body grid */}
-            <div className="flex-1 flex overflow-hidden min-h-0">
+            {/* Split Content Body */}
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
               
-              {/* Order content lists (Left side) */}
-              <div className="w-1/2 p-6 overflow-y-auto border-r border-neutral-200 flex flex-col justify-between">
-                <div className="space-y-4">
+              {/* Left Column: Current Order Items, Chef Notes, Change Reason & Save Actions */}
+              <div className="w-full md:w-[42%] border-b md:border-b-0 md:border-r border-neutral-100 p-4 md:p-5 flex flex-col overflow-hidden justify-between bg-white min-h-0">
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                   <div>
                     <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1.5">
                       Current Order List ({editingOrder.items.reduce((acc, current) => acc + current.quantity, 0)} items)
@@ -1495,20 +1659,10 @@ export const StaffDashboard: React.FC = () => {
                         {editingOrder.items.map((it, idx) => (
                           <div key={idx} className="bg-neutral-50 p-3 rounded-xl flex items-center justify-between border border-neutral-200/50 hover:bg-neutral-100/50 transition">
                             <div className="space-y-0.5 flex-1 pr-2">
-                              <h4 className="text-xs font-black text-neutral-801 leading-tight">{it.name}</h4>
+                              <h4 className="text-xs font-black text-neutral-800 leading-tight">{it.name}</h4>
                               <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-extrabold text-amber-955">${(it.price * it.quantity).toFixed(2)}</span>
+                                <span className="text-[11px] font-extrabold text-amber-950">${(it.price * it.quantity).toFixed(2)}</span>
                                 <span className="text-[10px] text-neutral-400 font-medium">${it.price.toFixed(2)} each</span>
-                              </div>
-                              <div className="flex items-center gap-1 bg-white border border-neutral-200 rounded px-1.5 py-0.5 mt-1">
-                                <MessageSquare className="w-2.5 h-2.5 text-neutral-400" />
-                                <input
-                                  type="text"
-                                  placeholder="Item note..."
-                                  value={it.notes || ""}
-                                  onChange={(e) => handleEditNote(it.productId, e.target.value)}
-                                  className="w-full text-[9px] bg-transparent outline-none py-0.5"
-                                />
                               </div>
                             </div>
                             
@@ -1516,17 +1670,17 @@ export const StaffDashboard: React.FC = () => {
                               <button 
                                 type="button"
                                 onClick={() => updateEditQty(it.productId, -1)}
-                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-3xs active:scale-90 transition cursor-pointer"
+                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
                               >
                                 <Minus className="w-3 h-3 text-neutral-600" />
                               </button>
                               
-                              <span className="text-xs font-black w-5 text-center select-none text-neutral-808">{it.quantity}</span>
+                              <span className="text-xs font-black w-5 text-center select-none text-neutral-800">{it.quantity}</span>
                               
                               <button 
                                 type="button"
                                 onClick={() => updateEditQty(it.productId, 1)}
-                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-3xs active:scale-90 transition cursor-pointer"
+                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
                               >
                                 <Plus className="w-3 h-3 text-neutral-600" />
                               </button>
@@ -1534,7 +1688,7 @@ export const StaffDashboard: React.FC = () => {
                               <button 
                                 type="button"
                                 onClick={() => updateEditQty(it.productId, -it.quantity)}
-                                className="ml-1 p-1 hover:bg-red-55 text-red-500 rounded-md transition cursor-pointer shrink-0"
+                                className="ml-1 p-1 hover:bg-red-50 text-red-500 rounded-md transition cursor-pointer"
                                 title="Remove item"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1563,7 +1717,7 @@ export const StaffDashboard: React.FC = () => {
                       </div>
                       <div className="flex justify-between border-t border-neutral-200/50 pt-2 text-xs font-black text-neutral-900 uppercase tracking-wide">
                         <span>Estimated Total</span>
-                        <span className="text-amber-955 font-extrabold text-sm">
+                        <span className="text-amber-950 font-extrabold text-sm">
                           ${(
                             editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0) * 
                             (1 + (editingOrder.vatRate ?? settings.vatPercentage / 100))
@@ -1573,124 +1727,193 @@ export const StaffDashboard: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Notes / Special Instructions and Audit fields */}
-                  <div className="space-y-2.5">
-                    <div>
-                      <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1">
-                        General Customer Notes:
-                      </span>
-                      <textarea
-                        rows={2}
-                        placeholder="E.g. Table order special requests"
-                        value={editingOrder.customerNotes || ""}
-                        onChange={(e) => setEditingOrder({ ...editingOrder, customerNotes: e.target.value })}
-                        className="w-full bg-neutral-50 border border-neutral-200 rounded-xl p-2.5 text-xs font-medium outline-none focus:border-neutral-400"
-                      />
-                    </div>
+                  {/* Chef Notes / Table Instruction */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                      Edit Chef Instructions
+                    </label>
+                    <textarea 
+                      value={editingOrder.customerNotes || ""}
+                      onChange={(e) => setEditingOrder({ ...editingOrder, customerNotes: e.target.value })}
+                      rows={2}
+                      placeholder="e.g. Extra hot, milk on the side..."
+                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition"
+                    />
+                  </div>
 
-                    <div>
-                      <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1">
-                        Auditing/Change Reason (Mandatory):
-                      </span>
-                      <input
-                        type="text"
-                        required
-                        placeholder="E.g. Customer changed mind, added order extra, cancelled item"
-                        value={editReason}
-                        onChange={(e) => setEditReason(e.target.value)}
-                        className="w-full bg-neutral-50 border border-neutral-200 rounded-xl p-2.5 text-xs font-semibold outline-none focus:border-neutral-400 text-neutral-800"
-                      />
-                    </div>
+                  {/* Reason for Editing (for Audit Logs) */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                      Reason for Editing
+                    </label>
+                    <input 
+                      type="text"
+                      value={editReason}
+                      onChange={(e) => setEditReason(e.target.value)}
+                      placeholder="e.g. Order changed, incorrect item..."
+                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition font-sans"
+                    />
                   </div>
                 </div>
 
-                {/* Audit trigger button */}
-                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100 mt-4 shrink-0">
-                  <button
+                {/* Left Pane Action Footer */}
+                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100 shrink-0 mt-3 md:mt-2">
+                  <button 
                     type="button"
                     onClick={() => setEditingOrder(null)}
-                    className="py-3 border border-neutral-200 hover:bg-neutral-50 text-neutral-600 font-bold rounded-xl text-center text-xs transition cursor-pointer"
+                    className="py-2.5 bg-neutral-100 hover:bg-neutral-200 font-extrabold rounded-xl text-neutral-600 transition cursor-pointer text-xs"
                   >
-                    Discard Changes
+                    Cancel
                   </button>
-                  <button
+                  <button 
                     type="button"
-                    onClick={handleSaveEditOrder}
-                    disabled={editingOrder.items.length === 0 || !editReason.trim()}
-                    className={`py-3 text-white font-black rounded-xl text-center text-xs transition flex items-center justify-center gap-1.5 shadow-xs uppercase tracking-wider ${
-                      editingOrder.items.length > 0 && editReason.trim()
-                        ? "bg-amber-950 hover:bg-amber-900 cursor-pointer"
-                        : "bg-neutral-200 text-neutral-400 cursor-not-allowed"
-                    }`}
+                    onClick={saveEditedOrder}
+                    disabled={editingOrder.items.length === 0}
+                    className="py-2.5 bg-amber-950 hover:bg-amber-900 font-extrabold rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer text-xs uppercase"
                   >
-                    <CheckCircle className="w-4 h-4" />
-                    Apply Changes
+                    Save updates
                   </button>
                 </div>
-
               </div>
 
-              {/* Add menu items panel (Right side) */}
-              <div className="w-1/2 bg-neutral-50 p-6 flex flex-col overflow-hidden">
-                <div className="flex gap-3 mb-4 shrink-0">
-                  <div className="relative flex-1">
-                    <input
+              {/* Right Column: Dynamic Visual Product Menu Picker */}
+              <div className="flex-1 bg-neutral-50 p-4 md:p-5 flex flex-col overflow-hidden min-h-0">
+                
+                {/* Search Bar & Categories Tabs */}
+                <div className="shrink-0 space-y-3 mb-4">
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                    <input 
                       type="text"
-                      placeholder="Filter category or item..."
                       value={editProductSearch}
                       onChange={(e) => setEditProductSearch(e.target.value)}
-                      className="w-full bg-white border border-neutral-200 rounded-xl p-2 pl-8 text-xs font-semibold outline-none"
+                      placeholder="Search to add products..."
+                      className="w-full text-xs pl-10 pr-9 py-2.5 rounded-xl bg-white text-neutral-900 placeholder:text-neutral-400 border border-neutral-200 outline-none focus:ring-1 focus:ring-amber-950 focus:border-amber-950 font-bold shadow-xs transition"
                     />
-                    <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                    {editProductSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setEditProductSearch("")}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600"
+                        title="Clear search"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
 
-                  <select
-                    value={editCategoryFilter}
-                    onChange={(e) => setEditCategoryFilter(e.target.value)}
-                    className="bg-white border border-neutral-200 text-xs font-semibold rounded-xl px-2 outline-none cursor-pointer"
-                  >
-                    <option value="all">All Category</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                  {/* Categories Horizontally Scrollable Pills */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                    <button
+                      type="button"
+                      onClick={() => setEditCategoryFilter("all")}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] md:text-[11px] font-black tracking-wider whitespace-nowrap transition cursor-pointer ${
+                        editCategoryFilter === "all" 
+                          ? "bg-amber-950 text-white shadow-xs" 
+                          : "bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200/50"
+                      }`}
+                    >
+                      ALL ITEMS
+                    </button>
+                    {categories.map(cat => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setEditCategoryFilter(cat.id);
+                          setEditProductSearch("");
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] md:text-[11px] font-black tracking-wider whitespace-nowrap transition flex items-center gap-1 cursor-pointer ${
+                          editCategoryFilter === cat.id 
+                            ? "bg-amber-950 text-white shadow-xs" 
+                            : "bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200/50"
+                        }`}
+                      >
+                        <span>{cat.name.toUpperCase()}</span>
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
-                {/* Menu elements grid scroll */}
-                <div className="flex-1 overflow-y-auto">
-                  <div className="grid grid-cols-2 gap-3 pb-2">
+                {/* Items Grid View */}
+                <div className="flex-1 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {products
-                      .filter(p => !p.isArchived)
-                      .filter(p => editCategoryFilter === "all" || p.categoryId === editCategoryFilter)
-                      .filter(p => p.name.toLowerCase().includes(editProductSearch.toLowerCase()))
+                      .filter(p => !p.isArchived && p.available)
+                      .filter(p => editProductSearch ? true : (editCategoryFilter === "all" || p.categoryId === editCategoryFilter))
+                      .filter(p => {
+                        const matchesName = p.name.toLowerCase().includes(editProductSearch.toLowerCase());
+                        const cat = categories.find(c => c.id === p.categoryId);
+                        const matchesCategoryName = cat ? cat.name.toLowerCase().includes(editProductSearch.toLowerCase()) : false;
+                        return matchesName || matchesCategoryName;
+                      })
                       .map(p => {
                         const countInEdit = editingOrder.items.find(it => it.productId === p.id)?.quantity || 0;
                         return (
-                          <div
+                          <div 
                             key={p.id}
-                            onClick={() => handleAddEditProduct(p)}
-                            className="bg-white p-3 rounded-xl border border-neutral-200 hover:border-amber-955 hover:shadow-2xs cursor-pointer flex flex-col justify-between h-24 relative overflow-hidden transition"
+                            onClick={() => addEditProduct(p)}
+                            className={`bg-white border text-left rounded-2xl overflow-hidden shadow-xs hover:shadow-md hover:border-amber-900/50 cursor-pointer active:scale-97 transition flex flex-col group relative ${
+                              countInEdit > 0 ? "border-amber-950 ring-1 ring-amber-950" : "border-neutral-200/80"
+                            }`}
                           >
-                            <div className="flex justify-between items-start gap-1">
-                              <h5 className="font-extrabold text-[11px] text-neutral-800 leading-tight">
-                                {p.name}
-                              </h5>
+                            <div className="h-20 bg-neutral-100 relative overflow-hidden shrink-0">
+                              <img 
+                                src={p.image} 
+                                alt={p.name}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400`;
+                                }}
+                              />
+                              <div className="absolute top-1 right-1 flex flex-col gap-1 items-end">
+                                {p.isDrink ? (
+                                  <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-xs border border-neutral-100/30 rounded-md text-[8px] font-black text-amber-800 uppercase">
+                                    Drink
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-xs border border-neutral-100/30 rounded-md text-[8px] font-black text-emerald-800 uppercase">
+                                    Food
+                                  </span>
+                                )}
+                              </div>
                               {countInEdit > 0 && (
-                                <span className="bg-amber-950 text-white font-black text-[9px] px-1.5 rounded-full shrink-0">
-                                  {countInEdit}
-                                </span>
+                                <div className="absolute inset-0 bg-black/10 flex items-center justify-center animate-fade-in">
+                                  <span className="bg-amber-950 text-white font-extrabold text-xs w-7 h-7 rounded-full flex items-center justify-center shadow-lg border-2 border-white scale-110">
+                                    {countInEdit}
+                                  </span>
+                                </div>
                               )}
                             </div>
-                            <div className="flex justify-between items-end border-t border-neutral-100 pt-1.5">
-                              <span className="font-black text-xs text-neutral-800 font-mono">${p.price.toFixed(2)}</span>
-                              <span className="w-5 h-5 rounded-md bg-amber-50 text-amber-955 flex items-center justify-center font-bold">
-                                +
-                              </span>
+                            <div className="p-2.5 flex-1 flex flex-col justify-between space-y-1.5">
+                              <h4 className="text-[11px] font-black text-neutral-800 line-clamp-2 leading-tight">
+                                {p.name}
+                              </h4>
+                              <div className="flex items-center justify-between pt-1.5 border-t border-neutral-100">
+                                <span className="text-xs font-black text-neutral-900">${p.price.toFixed(2)}</span>
+                                <span className="text-[9px] bg-neutral-100 text-neutral-700 font-extrabold px-1.5 py-0.5 rounded-md group-hover:bg-amber-950 group-hover:text-white transition uppercase">
+                                  + Add
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );
                       })}
                   </div>
+                  {products
+                    .filter(p => !p.isArchived && p.available)
+                    .filter(p => editProductSearch ? true : (editCategoryFilter === "all" || p.categoryId === editCategoryFilter))
+                    .filter(p => {
+                      const matchesName = p.name.toLowerCase().includes(editProductSearch.toLowerCase());
+                      const cat = categories.find(c => c.id === p.categoryId);
+                      const matchesCategoryName = cat ? cat.name.toLowerCase().includes(editProductSearch.toLowerCase()) : false;
+                      return matchesName || matchesCategoryName;
+                    }).length === 0 && (
+                      <div className="text-center py-10 text-neutral-400 text-xs">
+                        No available menu items match the active filters.
+                      </div>
+                  )}
                 </div>
 
               </div>
@@ -1701,100 +1924,233 @@ export const StaffDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Served Tickets printer options Modal */}
+      {/* Pre-serving Print and Checklist options dialog */}
       {servingOrderWithOptions && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-3xs z-50 flex items-center justify-center p-4">
-          <div className="bg-stone-900 border border-stone-850 text-white rounded-3xl p-6 max-w-sm w-full shadow-2xl relative space-y-5">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-800 text-white rounded-3xl p-6 max-w-sm w-full shadow-2xl relative space-y-5">
             <button 
               onClick={() => setServingOrderWithOptions(null)}
-              className="absolute top-4 right-4 p-1 rounded-full text-stone-450 hover:text-white hover:bg-stone-800 transition"
+              className="absolute top-4 right-4 p-1 rounded-full text-stone-500 hover:text-white hover:bg-stone-800 transition"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div>
-              <span className="text-[9px] text-amber-500 font-bold uppercase tracking-widest block">Luna Serving Station Manager</span>
-              <h3 className="text-sm font-black text-white uppercase mt-0.5">
-                Serving Order: {servingOrderWithOptions.orderNumber}
-              </h3>
+            <div className="text-center space-y-1">
+              <span className="text-[9px] text-[#E5C158] font-bold font-mono uppercase tracking-widest block">Luna Cafe Ticket Control</span>
+              <h3 className="text-sm font-black text-white uppercase tracking-tight">Print Options before Serving</h3>
+              <p className="text-[10px] text-stone-400">Order Ref: {servingOrderWithOptions.orderNumber} ({servingOrderWithOptions.tableName})</p>
             </div>
 
-            <p className="text-xs text-stone-400 leading-normal font-medium">
-              Would you like to print additional station tickets directly to the thermal receipt paper rolls?
-            </p>
-
-            <div className="space-y-3.5 pt-1">
-              <label className="flex items-center gap-2.5 font-bold text-xs select-none text-stone-300">
+            <div className="bg-stone-950 border border-stone-800 p-4 rounded-2xl space-y-3">
+              <label className="text-[9px] font-black text-stone-500 uppercase tracking-wider block">Receipt Type Options</label>
+              
+              <label className="flex items-center gap-3 cursor-pointer select-none text-xs text-stone-200">
                 <input 
-                  type="checkbox" 
+                  type="checkbox"
                   checked={printKitchenChecked}
                   onChange={(e) => setPrintKitchenChecked(e.target.checked)}
-                  className="w-4.5 h-4.5 accent-amber-500 cursor-pointer text-stone-950 rounded bg-stone-950"
+                  className="w-4 h-4 accent-[#E5C158]"
                 />
-                Print Kitchen Ticket (Food)
+                <span>📄 Kitchen Receipt (Food duplicate)</span>
               </label>
 
-              <label className="flex items-center gap-2.5 font-bold text-xs select-none text-stone-300">
+              <label className="flex items-center gap-3 cursor-pointer select-none text-xs text-stone-200">
                 <input 
-                  type="checkbox" 
+                  type="checkbox"
                   checked={printBaristaChecked}
                   onChange={(e) => setPrintBaristaChecked(e.target.checked)}
-                  className="w-4.5 h-4.5 accent-amber-500 cursor-pointer text-stone-950 rounded bg-stone-950"
+                  className="w-4 h-4 accent-[#E5C158]"
                 />
-                Print Barista Ticket (Drinks)
+                <span>☕ Barista Receipt (Drink duplicate)</span>
               </label>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-3">
-              <button
-                type="button"
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button 
                 onClick={() => {
-                  setPrintKitchenChecked(false);
-                  setPrintBaristaChecked(false);
+                  if (printKitchenChecked && printBaristaChecked) {
+                    setPrintingOrder(servingOrderWithOptions);
+                    setReceiptType("kitchen");
+                  } else if (printKitchenChecked) {
+                    setPrintingOrder(servingOrderWithOptions);
+                    setReceiptType("kitchen");
+                  } else if (printBaristaChecked) {
+                    setPrintingOrder(servingOrderWithOptions);
+                    setReceiptType("barista");
+                  }
                   serveOrder(servingOrderWithOptions.id);
                   setServingOrderWithOptions(null);
                 }}
-                className="py-2.5 bg-stone-950 border border-stone-800 hover:bg-stone-800 font-bold rounded-xl text-stone-400 hover:text-white text-xs transition cursor-pointer"
+                className="col-span-2 py-3 bg-[#E5C158] hover:bg-[#D4AF37] text-stone-900 font-extrabold rounded-xl transition shadow-md uppercase tracking-wider text-[10px]"
+              >
+                Print Selected & Serve
+              </button>
+
+              <button 
+                onClick={() => {
+                  setPrintingOrder(servingOrderWithOptions);
+                  setReceiptType("kitchen");
+                  serveOrder(servingOrderWithOptions.id);
+                  setServingOrderWithOptions(null);
+                }}
+                className="py-2.5 bg-stone-800 hover:bg-stone-700 text-stone-150 font-bold rounded-xl transition text-[10px] uppercase"
+              >
+                Print Both
+              </button>
+
+              <button 
+                onClick={() => {
+                  setPrintingOrder(servingOrderWithOptions);
+                  setReceiptType("kitchen");
+                }}
+                className="py-2.5 bg-stone-850 hover:bg-stone-750 text-stone-200 font-bold rounded-xl transition text-[10px] uppercase"
+              >
+                Print Kitchen
+              </button>
+
+              <button 
+                onClick={() => {
+                  setPrintingOrder(servingOrderWithOptions);
+                  setReceiptType("barista");
+                }}
+                className="py-2.5 bg-stone-850 hover:bg-stone-750 text-stone-200 font-bold rounded-xl transition text-[10px] uppercase"
+              >
+                Print Barista
+              </button>
+
+              <button 
+                onClick={() => {
+                  serveOrder(servingOrderWithOptions.id);
+                  setServingOrderWithOptions(null);
+                }}
+                className="col-span-2 py-2.5 bg-stone-950 border border-stone-800 hover:bg-stone-850 text-stone-400 font-bold rounded-xl transition text-[10px] uppercase"
               >
                 Skip Printing
               </button>
-              
-              <button
-                type="button"
-                onClick={handleServerOrderWithOptions}
-                className="py-2.5 bg-[#E5C158] hover:bg-[#D4AF37] font-black text-stone-950 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
-              >
-                Accept & Print
-              </button>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* Global Receipt Printer Modal Layer View */}
+      {/* Interactive print preview popup modal */}
       {printingOrder && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-3xs z-50 flex items-center justify-center p-4">
-          <div className="bg-stone-950 border border-stone-850 text-white rounded-3xl overflow-hidden w-full max-w-sm h-[80vh] shadow-2xl relative">
-            <button 
-              onClick={() => setPrintingOrder(null)}
-              className="absolute top-4 right-4 p-1 bg-stone-900 border border-stone-850 hover:bg-stone-800 rounded-full text-stone-300 hover:text-white transition z-10"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="h-full p-1.5">
-              <ReceiptView 
-                order={printingOrder}
-                settings={settings}
-                type={receiptType}
-                onClose={() => setPrintingOrder(null)}
-              />
-            </div>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-[360px] h-[90vh]">
+            <ReceiptView 
+              order={printingOrder}
+              settings={settings}
+              type={receiptType}
+              onClose={() => setPrintingOrder(null)}
+            />
           </div>
         </div>
       )}
 
     </div>
   );
+};// WAITER POS ACCESS PERMISSIONS
+
+const ROLE_PERMISSIONS = {
+  waiter: {
+    canAccessPOS: true,
+    canCreatePOSOrder: true,
+    canAccessOrderQueue: true,
+    canAccessMenuSelection: true,
+
+    canMarkPaid: false,
+    canSettleBill: false,
+    canCheckoutBill: false,
+    canProcessPayment: false,
+    canAccessAdmin: false,
+    canAccessCustomerQR: false,
+  },
+
+  cashier: {
+    canAccessPOS: true,
+    canCreatePOSOrder: true,
+    canAccessOrderQueue: true,
+    canAccessMenuSelection: true,
+
+    canMarkPaid: true,
+    canSettleBill: true,
+    canCheckoutBill: true,
+    canProcessPayment: true,
+    canAccessAdmin: false,
+    canAccessCustomerQR: false,
+  },
+
+  admin: {
+    canAccessPOS: true,
+    canCreatePOSOrder: true,
+    canAccessOrderQueue: true,
+    canAccessMenuSelection: true,
+
+    canMarkPaid: true,
+    canSettleBill: true,
+    canCheckoutBill: true,
+    canProcessPayment: true,
+    canAccessAdmin: true,
+    canAccessCustomerQR: true,
+  },
 };
+
+function getPermissions(user) {
+  return ROLE_PERMISSIONS[user?.role] || ROLE_PERMISSIONS.waiter;
+}
+
+function can(user, permission) {
+  return getPermissions(user)[permission] === true;
+}
+
+// WAITER MENU ACCESS
+function getVisibleMenuItems(user) {
+  const menu = [];
+
+  if (can(user, "canAccessPOS")) menu.push("POS");
+  if (can(user, "canCreatePOSOrder")) menu.push("Create POS Order");
+  if (can(user, "canAccessOrderQueue")) menu.push("Order Queue");
+  if (can(user, "canAccessMenuSelection")) menu.push("Menu Selection");
+
+  if (can(user, "canMarkPaid")) menu.push("Payments");
+  if (can(user, "canAccessAdmin")) menu.push("Admin Management");
+  if (can(user, "canAccessCustomerQR")) menu.push("Customer Self-Order QR");
+
+  return menu;
+}
+
+// PROTECT POS PAGES
+function openPOSPage(user) {
+  if (!can(user, "canAccessPOS")) {
+    alert("Access denied.");
+    return;
+  }
+
+  showPage("POS");
+}
+
+function openCreatePOSOrder(user) {
+  if (!can(user, "canCreatePOSOrder")) {
+    alert("Access denied.");
+    return;
+  }
+
+  showPage("Create POS Order");
+}
+
+function openOrderQueue(user) {
+  if (!can(user, "canAccessOrderQueue")) {
+    alert("Access denied.");
+    return;
+  }
+
+  showPage("Order Queue");
+}
+
+function openMenuSelection(user) {
+  if (!can(user, "canAccessMenuSelection")) {
+    alert("Access denied.");
+    return;
+  }
+
+  showPage("Menu Selection");
+}
