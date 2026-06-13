@@ -18,7 +18,8 @@ export const AdminPanel: React.FC = () => {
     updateVat, updateSettings, addUser, updateUser, deleteUser,
     addCategory, updateCategory, deleteCategory, addProduct, updateProduct, deleteProduct,
     addTable, removeTable, backupData, restoreData, addNotification,
-    clearAllCategories, clearAllProducts, importNewMenu, reseedDefaultMenu
+    clearAllCategories, clearAllProducts, importNewMenu, reseedDefaultMenu,
+    selectedBusinessDate, setSelectedBusinessDate
   } = usePOS();
 
   // Active admin sub-tab: "reports" | "menu" | "users" | "tables" | "settings" | "manual" | "stations"
@@ -119,14 +120,19 @@ export const AdminPanel: React.FC = () => {
   const paidOrders = orders.filter(o => o.status === "Paid" || o.paymentStatus === "Paid");
   
   const filteredPaidOrders = paidOrders.filter(o => {
-    const orderTimeMs = typeof o.createdAt === "string" ? new Date(o.createdAt).getTime() : o.createdAt;
-    const diffMs = Date.now() - orderTimeMs;
+    if (reportPeriod === "today") {
+      return o.businessDate === selectedBusinessDate;
+    }
+
+    const targetDate = new Date(selectedBusinessDate + "T23:59:59");
+    const orderDate = o.createdAt ? new Date(o.createdAt) : new Date();
+    
+    const diffMs = targetDate.getTime() - orderDate.getTime();
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
     
-    if (reportPeriod === "today") return diffDays <= 1;
-    if (reportPeriod === "week") return diffDays <= 7;
-    if (reportPeriod === "month") return diffDays <= 30;
-    if (reportPeriod === "year") return diffDays <= 365;
+    if (reportPeriod === "week") return diffDays >= 0 && diffDays <= 7;
+    if (reportPeriod === "month") return diffDays >= 0 && diffDays <= 30;
+    if (reportPeriod === "year") return diffDays >= 0 && diffDays <= 365;
     return true;
   });
 
@@ -425,18 +431,29 @@ export const AdminPanel: React.FC = () => {
       
       {/* Header controls pane */}
       <header className="bg-stone-900 border-b border-stone-850 px-6 py-4 shrink-0 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-1 px-2.5 bg-stone-950 border border-stone-800 rounded-xl flex items-center justify-center">
-            <LunaLogo size={42} hideText={true} />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-1 px-2.5 bg-stone-950 border border-stone-800 rounded-xl flex items-center justify-center">
+              <LunaLogo size={42} hideText={true} />
+            </div>
+            <div>
+              <h2 className="text-sm font-black uppercase text-white tracking-widest flex items-center gap-2">
+                Luna Control Centre
+                <span className="text-[10px] bg-amber-500/15 border border-[#E5C158]/20 text-[#E5C158] font-mono px-2 py-0.5 rounded-full font-black uppercase">
+                  {currentUser?.role || "ADMIN"} PANEL
+                </span>
+              </h2>
+              <p className="text-[11px] text-stone-400">Manage cafe dishes, shifts, tables, and financial reporting modules.</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-black uppercase text-white tracking-widest flex items-center gap-2">
-              Luna Control Centre
-              <span className="text-[10px] bg-amber-500/15 border border-[#E5C158]/20 text-[#E5C158] font-mono px-2 py-0.5 rounded-full font-black uppercase">
-                {currentUser?.role || "ADMIN"} PANEL
-              </span>
-            </h2>
-            <p className="text-[11px] text-stone-400">Manage cafe dishes, shifts, tables, and financial reporting modules.</p>
+          <div className="flex items-center gap-2 bg-stone-950 p-2 rounded-xl border border-stone-804 shrink-0 sm:ml-4">
+            <span className="text-[9px] uppercase font-black text-stone-400 pl-1">Shift Day:</span>
+            <input
+              type="date"
+              value={selectedBusinessDate}
+              onChange={(e) => setSelectedBusinessDate(e.target.value)}
+              className="bg-stone-900 border border-stone-800 rounded-lg text-xs font-black p-1 px-2 text-white outline-none focus:border-[#E5C158] cursor-pointer font-mono"
+            />
           </div>
         </div>
 
@@ -1775,6 +1792,43 @@ export const AdminPanel: React.FC = () => {
                   <p className="text-[10px] text-stone-500 leading-normal">
                     This modifier dynamically recalculates subtotal tax multipliers across waitery invoices. Somali Standard is 5%.
                   </p>
+                </div>
+
+                {/* Customer Self-Ordering Settings */}
+                <div className="bg-stone-950 p-4 border border-stone-800 rounded-2xl space-y-3">
+                  <h4 className="font-black text-[#E5C158] uppercase tracking-widest text-[9px]">
+                    Customer Self-Ordering Settings
+                  </h4>
+                  
+                  <div className="space-y-2 text-stone-200">
+                    <label className="flex items-center gap-2 group cursor-pointer hover:text-white transition">
+                      <input 
+                        type="checkbox"
+                        checked={settings.customerSelfOrderLocked || false}
+                        onChange={(e) => updateSettings({ customerSelfOrderLocked: e.target.checked })}
+                        className="w-4 h-4 rounded border-stone-800 bg-stone-905 accent-[#E5C158] cursor-pointer"
+                      />
+                      <span className="font-bold">Require Credentials to Order (Lock Mode)</span>
+                    </label>
+                    <p className="text-[10px] text-stone-500 pl-6 leading-normal">
+                      When enabled, tables must be unlocked by staff (using Admin/Developer login) before customers can submit their orders.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-stone-900 text-stone-200">
+                    <label className="flex items-center gap-2 group cursor-pointer hover:text-white transition">
+                      <input 
+                        type="checkbox"
+                        checked={settings.customerSelfOrderAutoApprove || false}
+                        onChange={(e) => updateSettings({ customerSelfOrderAutoApprove: e.target.checked })}
+                        className="w-4 h-4 rounded border-stone-800 bg-stone-905 accent-[#E5C158] cursor-pointer"
+                      />
+                      <span className="font-bold">Auto-Approve Customer Self-Orders</span>
+                    </label>
+                    <p className="text-[10px] text-stone-500 pl-6 leading-normal">
+                      When enabled, orders submitted via QR code bypass cashier validation and go straight to preparation queues.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

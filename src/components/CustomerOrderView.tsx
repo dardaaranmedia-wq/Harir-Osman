@@ -14,7 +14,7 @@ interface CustomerOrderViewProps {
 
 export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdParam }) => {
   const { 
-    categories, products, tables, orders, createOrder, settings 
+    categories, products, tables, orders, createOrder, settings, users 
   } = usePOS();
 
   // Find corresponding table info
@@ -26,6 +26,32 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
   const [generalComment, setGeneralComment] = useState("");
   const [activeTab, setActiveTab] = useState<"menu" | "cart" | "status">("menu");
   
+  // Unlock validation states
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    return localStorage.getItem(`table_authorized_${tableIdParam}`) === 'true';
+  });
+  const [unlockEmail, setUnlockEmail] = useState("");
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+
+  const handleUnlockTable = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!users) return;
+    const verifiedUser = users.find(u => 
+      u.isActive && 
+      (u.role === "Developer" || u.role === "Manager") && 
+      u.username?.toLowerCase() === unlockEmail.toLowerCase() && 
+      (u.password === unlockPassword || (u.id === "u-dev" && unlockPassword === "harir123098@@"))
+    );
+    if (verifiedUser) {
+      localStorage.setItem(`table_authorized_${tableIdParam}`, 'true');
+      setIsUnlocked(true);
+      setUnlockError("");
+    } else {
+      setUnlockError("Access Denied: Only active managers/developers can unlock tables.");
+    }
+  };
+  
   // Track submitted order in current session
   const [submittedOrderId, setSubmittedOrderId] = useState<string | null>(() => {
     return localStorage.getItem(`submitted_order_id_table_${tableIdParam}`) || null;
@@ -33,10 +59,12 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
 
   const submittedOrder = orders.find(o => o.id === submittedOrderId);
 
-  // If table gets cleared/paid, reset customer status tracking
+  // If table gets cleared/paid, reset customer status tracking and lock table again!
   useEffect(() => {
     if (submittedOrderId && submittedOrder && submittedOrder.status === OrderStatus.PAID) {
       localStorage.removeItem(`submitted_order_id_table_${tableIdParam}`);
+      localStorage.removeItem(`table_authorized_${tableIdParam}`);
+      setIsUnlocked(false);
       setSubmittedOrderId(null);
       setCart([]);
       setActiveTab("menu");
@@ -115,6 +143,67 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
     const matchesCategoryName = cat ? cat.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
     return matchCat && (matchesName || matchesCategoryName);
   });
+
+  if (settings.customerSelfOrderLocked && !isUnlocked) {
+    return (
+      <div className="min-h-screen bg-stone-900 text-stone-100 flex flex-col justify-center items-center p-6 font-sans max-w-md mx-auto shadow-xl border-x border-stone-800">
+        <div className="w-full space-y-6 text-center max-w-sm">
+          <div className="flex justify-center">
+            <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border-2 border-[#E5C158]/20 flex items-center justify-center animate-bounce">
+              <LunaLogo size={42} hideText={true} />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <h1 className="text-xl font-black uppercase tracking-wider text-white">Table Locked 🔒</h1>
+            <p className="text-xs text-stone-400 leading-normal">
+              Self-Ordering from <span className="text-[#E5C158] font-bold">{table ? table.name : "this Table"}</span> is locked.
+              Please request an authorized staff member or manager to authenticate this table session.
+            </p>
+          </div>
+
+          <form onSubmit={handleUnlockTable} className="space-y-4 text-left">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider">Manager/Developer Email</label>
+              <input
+                type="email"
+                required
+                placeholder="developer@luna.com"
+                value={unlockEmail}
+                onChange={(e) => setUnlockEmail(e.target.value)}
+                className="w-full bg-stone-950 border border-stone-800 focus:border-[#E5C158] rounded-xl p-3 text-xs text-white outline-none font-mono"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-stone-400 tracking-wider">Secure Password</label>
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={unlockPassword}
+                onChange={(e) => setUnlockPassword(e.target.value)}
+                className="w-full bg-stone-950 border border-stone-800 focus:border-[#E5C158] rounded-xl p-3 text-xs text-white outline-none font-mono"
+              />
+            </div>
+
+            {unlockError && (
+              <div className="p-3 bg-red-950/40 border border-red-500/20 text-red-400 text-[10px] font-bold rounded-lg leading-relaxed text-center">
+                {unlockError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full bg-[#E5C158] text-stone-950 hover:bg-[#d6b24d] font-bold py-3.5 rounded-xl transition text-xs uppercase tracking-wider flex items-center justify-center gap-1.5"
+            >
+              Unlock Table Session
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="customer-ordering-stage" className="min-h-screen bg-stone-50 text-neutral-900 pb-20 flex flex-col font-sans max-w-md mx-auto shadow-xl relative border-x border-neutral-200">

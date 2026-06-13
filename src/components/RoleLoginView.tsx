@@ -4,12 +4,7 @@ import { UserRole } from "../types";
 import { Coffee, Key, Lock, User, Sparkles, LogIn, ChevronRight, Eye, EyeOff } from "lucide-react";
 import { LunaLogo } from "./LunaLogo";
 
-interface RoleLoginViewProps {
-  onToggleSimulator?: () => void;
-  showSimulator?: boolean;
-}
-
-export const RoleLoginView: React.FC<RoleLoginViewProps> = ({ onToggleSimulator, showSimulator }) => {
+export const RoleLoginView: React.FC = () => {
   const { loginPin, loginAdmin, users } = usePOS();
   
   const [loginMode, setLoginMode] = useState<"pin" | "admin">("pin");
@@ -56,10 +51,8 @@ export const RoleLoginView: React.FC<RoleLoginViewProps> = ({ onToggleSimulator,
     setErrorText("");
   };
 
-  const handleAdminSubmit = (e?: React.FormEvent) => {
-    if (e) {
-      e.preventDefault();
-    }
+  const handleAdminSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorText("");
     
     // Developer account check
@@ -82,11 +75,7 @@ export const RoleLoginView: React.FC<RoleLoginViewProps> = ({ onToggleSimulator,
       <div className="w-full max-w-sm bg-neutral-950/70 backdrop-blur-xl border border-neutral-800 rounded-3xl p-6 shadow-2xl relative z-10 space-y-6">
         
         {/* Branding header */}
-        <div 
-          onDoubleClick={onToggleSimulator}
-          title="Luna Café Security Portal (Double click to toggle simulation options)"
-          className="text-center space-y-2 flex flex-col items-center justify-center cursor-pointer select-none"
-        >
+        <div className="text-center space-y-2 flex flex-col items-center justify-center">
           <div className="w-16 h-16 flex items-center justify-center">
             <LunaLogo className="w-14 h-14 text-[#E5C158]" />
           </div>
@@ -195,27 +184,20 @@ export const RoleLoginView: React.FC<RoleLoginViewProps> = ({ onToggleSimulator,
 
           </div>
         ) : (
-          /* Separate Secure Admin Form using raw elements to prevent intrusive Google Sign-In and safari email password autofill prompts */
-          <div className="space-y-4">
+          /* Separate Secure Admin Form */
+          <form onSubmit={handleAdminSubmit} className="space-y-4">
             <div className="space-y-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                  Admin Username or Email
+                  Admin Email
                 </label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
                   <input 
-                    type="text" 
+                    type="email" 
                     required
-                    placeholder="Enter Admin Username"
+                    placeholder="harirosman25@gmail.com"
                     value={email}
-                    autoComplete="new-password"
-                    autoCapitalize="none"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleAdminSubmit();
-                      }
-                    }}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-neutral-900 text-sm pl-11 pr-3 py-3 rounded-xl border border-neutral-800 focus:border-amber-950 outline-none text-white focus:bg-neutral-900/80 transition"
                   />
@@ -231,14 +213,8 @@ export const RoleLoginView: React.FC<RoleLoginViewProps> = ({ onToggleSimulator,
                   <input 
                     type={showPassword ? "text" : "password"} 
                     required
-                    placeholder="• • • • • •"
+                    placeholder="Password"
                     value={password}
-                    autoComplete="new-password"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleAdminSubmit();
-                      }
-                    }}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full bg-neutral-900 text-sm pl-11 pr-10 py-3 rounded-xl border border-neutral-800 focus:border-amber-950 outline-none text-white focus:bg-neutral-900/80 transition font-mono"
                   />
@@ -254,15 +230,14 @@ export const RoleLoginView: React.FC<RoleLoginViewProps> = ({ onToggleSimulator,
             </div>
 
             <button 
-              type="button"
-              onClick={() => handleAdminSubmit()}
-              className="w-full bg-amber-950 hover:bg-amber-900 text-white text-xs font-black py-3.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+              type="submit"
+              className="w-full bg-amber-950 hover:bg-amber-900 text-white text-xs font-black py-3.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
             >
               <LogIn className="w-4 h-4" />
               Sign in as Admin
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
-          </div>
+          </form>
         )}
       </div>
 
