@@ -1,14 +1,34 @@
 import React, { useState, useEffect } from "react";
 import { usePOS } from "../store/posStore";
-import { Order, OrderItem, OrderStatus, UserRole } from "../types";
-import { Flame, Coffee, Check, Clock, Bell, RefreshCw, Layers } from "lucide-react";
+import { Order, OrderItem, OrderStatus, UserRole, getSomaliaToday } from "../types";
+import { Flame, Coffee, Check, Clock, Bell, RefreshCw, Layers, Calendar, Edit, X } from "lucide-react";
 
 export const KitchenDashboard: React.FC = () => {
-  const { currentUser, orders, serveOrder, triggerChime } = usePOS();
+  const { currentUser, orders, serveOrder, triggerChime, users, updateOrderWaiter } = usePOS();
   
   // Track item checkmarks locally so chefs don't lose progress on reload
   const [completedItems, setCompletedItems] = useState<{ [key: string]: boolean }>({});
   const [activeSeconds, setActiveSeconds] = useState<number>(0);
+  const [filterDate, setFilterDate] = useState<string>(getSomaliaToday());
+
+  const canEditWaiter = currentUser?.role === UserRole.DEVELOPER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.CASHIER;
+
+  // Waiter editing state variables
+  const [editingWaiterOrder, setEditingWaiterOrder] = useState<Order | null>(null);
+  const [selectedWaiterName, setSelectedWaiterName] = useState("");
+
+  const handleOpenWaiterEdit = (order: Order) => {
+    setEditingWaiterOrder(order);
+    setSelectedWaiterName(order.waiterName || "");
+  };
+
+  const handleSaveWaiterEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingWaiterOrder) {
+      updateOrderWaiter(editingWaiterOrder.id, selectedWaiterName);
+      setEditingWaiterOrder(null);
+    }
+  };
 
   // Core filter based on staff role
   const isChef = currentUser?.role === UserRole.KITCHEN;
@@ -22,8 +42,35 @@ export const KitchenDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Helper to match order with selected filterDate in Somalia time zone
+  const orderMatchesDate = (o: Order) => {
+    if (!filterDate) return true;
+    try {
+      const d = new Date(o.createdAt);
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Africa/Mogadishu",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const parts = formatter.formatToParts(d);
+      let year = "";
+      let month = "";
+      let day = "";
+      for (const part of parts) {
+        if (part.type === "year") year = part.value;
+        if (part.type === "month") month = part.value;
+        if (part.type === "day") day = part.value;
+      }
+      const orderDateStr = `${year}-${month}-${day}`;
+      return orderDateStr === filterDate;
+    } catch (err) {
+      return o.createdAt.startsWith(filterDate);
+    }
+  };
+
   // Filter confirmed orders that are under preparation
-  const activeOrders = orders.filter(o => o.status === OrderStatus.NEW);
+  const activeOrders = orders.filter(o => o.status === OrderStatus.NEW && orderMatchesDate(o));
 
   // Play audio alarm on receiving new active tickets
   useEffect(() => {
@@ -78,7 +125,20 @@ export const KitchenDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          {/* Select Order Date Picker */}
+          <div className="flex items-center gap-2 bg-stone-900 border border-stone-800 text-[10px] font-bold px-3 py-1.5 rounded-xl">
+            <Calendar className="w-3.5 h-3.5 text-stone-400" />
+            <span className="text-stone-300 font-extrabold uppercase">Select Order Date:</span>
+            <input
+              type="date"
+              required
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="bg-stone-950 border border-stone-800 text-white p-1 rounded-lg outline-none text-[10px] font-black focus:ring-1 focus:ring-amber-500 font-sans cursor-pointer w-[120px]"
+            />
+          </div>
+
           <div className="bg-stone-900 border border-stone-800 text-[10px] font-bold px-3 py-2 rounded-xl flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
             LIVE STATION CONNECTED
@@ -131,7 +191,19 @@ export const KitchenDashboard: React.FC = () => {
                       {order.tableName}
                       <span className="text-[10px] text-stone-400 font-mono">({order.orderNumber})</span>
                     </h3>
-                    <span className="text-[9px] text-stone-500 font-bold mt-1 block">WAIT: {order.waiterName || "Staff"}</span>
+                    <span className="text-[9px] text-stone-500 font-bold mt-1 flex items-center gap-1.5 whitespace-nowrap">
+                      WAIT: <span className="font-extrabold text-stone-300">{order.waiterName || "Staff"}</span>
+                      {canEditWaiter && (
+                        <button
+                          onClick={() => handleOpenWaiterEdit(order)}
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded text-[8px] font-bold transition border border-stone-700 cursor-pointer"
+                          title="Edit Waiter Name"
+                        >
+                          <Edit className="w-2 h-2 text-stone-400" />
+                          Edit
+                        </button>
+                      )}
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/40 p-1.5 rounded-lg border border-amber-900/10">
@@ -219,6 +291,75 @@ export const KitchenDashboard: React.FC = () => {
           })
         )}
       </div>
+
+      {/* Edit Waiter Modal Overlay */}
+      {editingWaiterOrder && (
+        <div id="kitchen-edit-waiter-modal" className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[60] flex items-center justify-center p-4 hover:cursor-default" onClick={() => setEditingWaiterOrder(null)}>
+          <div className="bg-stone-900 border border-stone-800 text-white rounded-3xl p-6 max-w-sm w-full shadow-2xl relative space-y-5" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setEditingWaiterOrder(null)}
+              className="absolute top-4 right-4 p-1 rounded-full text-stone-500 hover:text-white hover:bg-stone-800 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-stone-950 border border-amber-500/20 rounded-2xl flex items-center justify-center text-amber-500">
+                <Edit className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[9px] text-amber-400 font-bold font-mono uppercase tracking-widest block">Operational Adjustments</span>
+                <h2 className="text-base font-black text-white uppercase tracking-tight">
+                  Edit waiter
+                </h2>
+                <p className="text-[11px] text-stone-400 mt-0.5">
+                  Order: <span className="font-extrabold text-stone-200">{editingWaiterOrder.orderNumber}</span> • Table: <span className="font-extrabold text-stone-200">{editingWaiterOrder.tableName}</span>
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveWaiterEdit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
+                  Select New Waiter
+                </label>
+                <select
+                  required
+                  value={selectedWaiterName}
+                  onChange={(e) => setSelectedWaiterName(e.target.value)}
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl p-2.5 text-xs font-bold outline-none text-white focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="">-- Choose Waiter --</option>
+                  <option value="Counter POS">Counter POS (None)</option>
+                  {users
+                    .filter(u => u.role === UserRole.WAITER && u.isActive)
+                    .map(w => (
+                      <option key={w.id} value={w.name}>
+                        {w.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingWaiterOrder(null)}
+                  className="flex-1 bg-stone-800 hover:bg-stone-750 text-stone-300 text-xs font-black py-2.5 rounded-xl transition cursor-pointer border border-stone-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-black py-2.5 rounded-xl transition shadow-xs cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

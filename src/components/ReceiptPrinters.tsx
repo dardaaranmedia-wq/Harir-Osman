@@ -9,6 +9,8 @@ export type PrintItem = {
   price?: number;
   station?: "kitchen" | "bar" | "bill";
   note?: string;
+  printedToKitchen?: boolean;
+  printedToBar?: boolean;
 };
 
 export type PrintOrder = {
@@ -184,6 +186,17 @@ function openPrintWindow(html: string) {
 }
 
 export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
+  // Aggregate items by name for the customer bill print to handle split lines elegantly
+  const aggregated: { [key: string]: PrintItem } = {};
+  order.items.forEach(item => {
+    if (!aggregated[item.name]) {
+      aggregated[item.name] = { ...item };
+    } else {
+      aggregated[item.name].qty += item.qty;
+    }
+  });
+  const billItems = Object.values(aggregated);
+
   const body = `
     <div class="center">
       <div class="shop-title">LUNA CAFÈ</div>
@@ -200,7 +213,7 @@ export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
 
     <div class="section-title">ITEMS</div>
 
-    ${order.items
+    ${billItems
       .map(
         item => `
         <div class="item-row">
@@ -242,64 +255,106 @@ export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
 }
 
 export function printKitchen(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
-  const kitchenItems = order.items.filter(
-    item => item.station === "kitchen" || !item.station
+  const newKitchenItems = order.items.filter(
+    item => (item.station === "kitchen" || !item.station) && !item.printedToKitchen
+  );
+  const oldKitchenItems = order.items.filter(
+    item => (item.station === "kitchen" || !item.station) && item.printedToKitchen
   );
 
   const body = `
-    <div class="receipt-title">KITCHEN ORDER</div>
+    <div class="receipt-title">KITCHEN DUPLICATE</div>
 
     <div class="row"><span>Order</span><b>#${order.orderNo}</b></div>
     <div class="row"><span>Table</span><b>${order.table || "-"}</b></div>
     <div class="row"><span>Waiter</span><b>${order.waiter || "-"}</b></div>
     <div class="row"><span>Time</span><b>${new Date().toLocaleTimeString()}</b></div>
 
-    <div class="section-title">KITCHEN ITEMS</div>
+    <div class="section-title">NEW KITCHEN ITEMS</div>
 
-    ${kitchenItems
-      .map(
-        item => `
-        <div class="station-item">
-          <span>${item.name}</span>
-          <span>x${item.qty}</span>
-        </div>
-        ${item.note ? `<div class="note">NOTE: ${item.note}</div>` : ""}
-      `
-      )
-      .join("")}
+    ${newKitchenItems.length === 0 
+      ? `<div class="center bold" style="padding: 15px 0; font-size: ${paper === "58mm" ? "10px" : "12px"};">NO NEW ITEMS TO PREPARE</div>`
+      : newKitchenItems
+          .map(
+            item => `
+            <div class="station-item">
+              <span>${item.name}</span>
+              <span>x${item.qty}</span>
+            </div>
+            ${item.note ? `<div class="note">NOTE: ${item.note}</div>` : ""}
+          `
+          )
+          .join("")}
 
-    <div class="footer">PREPARE ORDER</div>
+    ${oldKitchenItems.length > 0 ? `
+      <div class="section-title" style="margin-top: 15px; border-top: 1px dashed #000; font-weight: bold; font-size: ${paper === "58mm" ? "9px" : "11px"}; opacity: 0.8;">
+        PREVIOUSLY PRINTED (REFERENCE)
+      </div>
+      ${oldKitchenItems
+          .map(
+            item => `
+            <div class="station-item" style="font-weight: normal; font-size: ${paper === "58mm" ? "11px" : "13px"}; opacity: 0.65; text-decoration: line-through;">
+              <span>${item.name}</span>
+              <span>x${item.qty}</span>
+            </div>
+            ${item.note ? `<div class="note" style="text-decoration: line-through; opacity: 0.6;">NOTE: ${item.note}</div>` : ""}
+          `
+          )
+          .join("")}
+    ` : ""}
+
+    <div class="footer" style="margin-top: 15px; border-top: 1px solid #000; padding-top: 5px;">PREPARE ORDER</div>
   `;
 
   openPrintWindow(baseHtml("Kitchen Print", body, paper));
 }
 
 export function printBar(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
-  const barItems = order.items.filter(item => item.station === "bar");
+  const newBarItems = order.items.filter(item => item.station === "bar" && !item.printedToBar);
+  const oldBarItems = order.items.filter(item => item.station === "bar" && item.printedToBar);
 
   const body = `
-    <div class="receipt-title">BAR ORDER</div>
+    <div class="receipt-title">BAR DUPLICATE</div>
 
     <div class="row"><span>Order</span><b>#${order.orderNo}</b></div>
     <div class="row"><span>Table</span><b>${order.table || "-"}</b></div>
     <div class="row"><span>Waiter</span><b>${order.waiter || "-"}</b></div>
     <div class="row"><span>Time</span><b>${new Date().toLocaleTimeString()}</b></div>
 
-    <div class="section-title">BAR ITEMS</div>
+    <div class="section-title">NEW BAR ITEMS</div>
 
-    ${barItems
-      .map(
-        item => `
-        <div class="station-item">
-          <span>${item.name}</span>
-          <span>x${item.qty}</span>
-        </div>
-        ${item.note ? `<div class="note">NOTE: ${item.note}</div>` : ""}
-      `
-      )
-      .join("")}
+    ${newBarItems.length === 0
+      ? `<div class="center bold" style="padding: 15px 0; font-size: ${paper === "58mm" ? "10px" : "12px"};">NO NEW ITEMS TO PREPARE</div>`
+      : newBarItems
+          .map(
+            item => `
+            <div class="station-item">
+              <span>${item.name}</span>
+              <span>x${item.qty}</span>
+            </div>
+            ${item.note ? `<div class="note">NOTE: ${item.note}</div>` : ""}
+          `
+          )
+          .join("")}
 
-    <div class="footer">PREPARE DRINKS</div>
+    ${oldBarItems.length > 0 ? `
+      <div class="section-title" style="margin-top: 15px; border-top: 1px dashed #000; font-weight: bold; font-size: ${paper === "58mm" ? "9px" : "11px"}; opacity: 0.8;">
+        PREVIOUSLY PRINTED (REFERENCE)
+      </div>
+      ${oldBarItems
+          .map(
+            item => `
+            <div class="station-item" style="font-weight: normal; font-size: ${paper === "58mm" ? "11px" : "13px"}; opacity: 0.65; text-decoration: line-through;">
+              <span>${item.name}</span>
+              <span>x${item.qty}</span>
+            </div>
+            ${item.note ? `<div class="note" style="text-decoration: line-through; opacity: 0.6;">NOTE: ${item.note}</div>` : ""}
+          `
+          )
+          .join("")}
+    ` : ""}
+
+    <div class="footer" style="margin-top: 15px; border-top: 1px solid #000; padding-top: 5px;">PREPARE DRINKS</div>
   `;
 
   openPrintWindow(baseHtml("Bar Print", body, paper));
@@ -339,7 +394,9 @@ function mapOrderToPrintOrder(order: Order): PrintOrder {
         qty: item.quantity,
         price: item.price,
         station: itemStation,
-        note: item.notes
+        note: item.notes,
+        printedToKitchen: item.printedToKitchen,
+        printedToBar: item.printedToBar
       };
     }),
     subtotal: order.subtotal,
@@ -357,6 +414,7 @@ interface ReceiptProps {
 }
 
 export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onClose }) => {
+  const { markItemsAsPrinted } = usePOS();
   const [copied, setCopied] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [customerEmail, setCustomerEmail] = useState("");
@@ -376,24 +434,59 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
     return "kitchen";
   });
 
-  const displayItems = order.items.filter(item => {
-    if (selectedStation === "bill") return true;
-    const nameLower = (item.name || "").toLowerCase();
-    const isDrink = nameLower.includes("coffee") || 
-      nameLower.includes("latte") || 
-      nameLower.includes("cappuccino") || 
-      nameLower.includes("espresso") || 
-      nameLower.includes("macchiato") || 
-      nameLower.includes("matcha") || 
-      nameLower.includes("mocha") || 
-      nameLower.includes("tea") || 
-      nameLower.includes("americano") ||
-      nameLower.includes("cold brew") ||
-      item.isDrink;
+  const displayItems = selectedStation === "bill"
+    ? (() => {
+        const aggregated: { [key: string]: OrderItem } = {};
+        order.items.forEach(item => {
+          if (!aggregated[item.productId]) {
+            aggregated[item.productId] = { ...item };
+          } else {
+            aggregated[item.productId].quantity += item.quantity;
+          }
+        });
+        return Object.values(aggregated);
+      })()
+    : order.items.filter(item => {
+        const nameLower = (item.name || "").toLowerCase();
+        const isDrink = nameLower.includes("coffee") || 
+          nameLower.includes("latte") || 
+          nameLower.includes("cappuccino") || 
+          nameLower.includes("espresso") || 
+          nameLower.includes("macchiato") || 
+          nameLower.includes("matcha") || 
+          nameLower.includes("mocha") || 
+          nameLower.includes("tea") || 
+          nameLower.includes("americano") ||
+          nameLower.includes("cold brew") ||
+          item.isDrink;
 
-    if (selectedStation === "bar") return isDrink;
-    return !isDrink;
-  });
+        if (selectedStation === "bar") {
+          return isDrink && !item.printedToBar;
+        }
+        return !isDrink && !item.printedToKitchen;
+      });
+
+  const oldDisplayItems = selectedStation === "bill"
+    ? []
+    : order.items.filter(item => {
+        const nameLower = (item.name || "").toLowerCase();
+        const isDrink = nameLower.includes("coffee") || 
+          nameLower.includes("latte") || 
+          nameLower.includes("cappuccino") || 
+          nameLower.includes("espresso") || 
+          nameLower.includes("macchiato") || 
+          nameLower.includes("matcha") || 
+          nameLower.includes("mocha") || 
+          nameLower.includes("tea") || 
+          nameLower.includes("americano") ||
+          nameLower.includes("cold brew") ||
+          item.isDrink;
+
+        if (selectedStation === "bar") {
+          return isDrink && item.printedToBar;
+        }
+        return !isDrink && item.printedToKitchen;
+      });
 
   const handlePrint = () => {
     const printOrder = mapOrderToPrintOrder(order);
@@ -401,8 +494,10 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
       printBill(printOrder, paperWidth);
     } else if (selectedStation === "kitchen") {
       printKitchen(printOrder, paperWidth);
+      markItemsAsPrinted(order.id, "kitchen");
     } else {
       printBar(printOrder, paperWidth);
+      markItemsAsPrinted(order.id, "bar");
     }
   };
 
@@ -450,16 +545,33 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
       `;
     } else {
       bodyText = `
-        <div class="receipt-title">${selectedStation.toUpperCase()} ORDER</div>
+        <div class="receipt-title">${selectedStation.toUpperCase()} DUPLICATE</div>
         <div class="row"><span>Order</span><b>#${order.orderNumber}</b></div>
         <div class="row"><span>Table</span><b>${order.tableName || "-"}</b></div>
         <div class="row"><span>Time</span><b>${new Date().toLocaleTimeString()}</b></div>
-        <div class="section-title">${selectedStation.toUpperCase()} ITEMS</div>
-        ${displayItems.map(item => `
-          <div class="station-item"><span>${item.name}</span><span>value x${item.quantity}</span></div>
-          ${item.notes ? `<div class="note">NOTE: ${item.notes}</div>` : ""}
-        `).join("")}
-        <div class="footer">PREPARE ORDER</div>
+        
+        <div class="section-title">NEW ${selectedStation.toUpperCase()} ITEMS</div>
+        ${displayItems.length === 0
+          ? `<div class="center bold" style="padding: 10px 0;">NO NEW ITEMS</div>`
+          : displayItems.map(item => `
+              <div class="station-item"><span>${item.name}</span><span>x${item.quantity}</span></div>
+              ${item.notes ? `<div class="note">NOTE: ${item.notes}</div>` : ""}
+            `).join("")}
+
+        ${oldDisplayItems.length > 0 ? `
+          <div class="section-title" style="margin-top: 15px; border-top: 1px dashed #000; opacity: 0.8;">
+            PREVIOUSLY PRINTED ITEMS (REFERENCE)
+          </div>
+          ${oldDisplayItems.map(item => `
+            <div class="station-item" style="opacity: 0.65; text-decoration: line-through; font-weight: normal;">
+              <span>${item.name}</span>
+              <span>x${item.quantity}</span>
+            </div>
+            ${item.notes ? `<div class="note" style="text-decoration: line-through; opacity: 0.6;">NOTE: ${item.notes}</div>` : ""}
+          `).join("")}
+        ` : ""}
+        
+        <div class="footer" style="margin-top: 15px; border-top: 1px solid #000; padding-top: 5px;">PREPARE ORDER</div>
       `;
     }
 
@@ -654,8 +766,12 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
                 <span className="font-black uppercase">{order.tableName}</span>
               </div>
               <div className="flex justify-between">
-                <span>STAFF USER:</span>
-                <span>{order.cashierName || order.waiterName || "Counter"}</span>
+                <span>WAITER:</span>
+                <span>{order.waiterName || "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>CASHIER:</span>
+                <span>{order.cashierName || "Farhan"}</span>
               </div>
               <div className="flex justify-between border-b border-dashed border-black pb-1">
                 <span>DATE/TIME:</span>
@@ -675,31 +791,79 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
                 </tr>
               </thead>
               <tbody>
-                {displayItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={selectedStation === "bill" ? 3 : 2} className="py-3 text-center text-neutral-500 italic">
-                      No matching items for this station.
-                    </td>
-                  </tr>
+                {selectedStation !== "bill" ? (
+                  <>
+                    <tr className="bg-neutral-100 font-bold border-b border-black text-[8px] text-black">
+                      <td colSpan={2} className="py-1 px-1">NEW {selectedStation.toUpperCase()} ITEMS</td>
+                    </tr>
+                    {displayItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="py-2 text-center text-neutral-500 italic font-medium">
+                          No new items – all printed.
+                        </td>
+                      </tr>
+                    ) : (
+                      displayItems.map((item, idx) => (
+                        <tr key={`new-${idx}`} className="align-top border-b border-dotted border-neutral-300">
+                          <td className="py-1 font-black">{item.quantity}x</td>
+                          <td className="py-1">
+                            <span className="font-bold">{item.name}</span>
+                            {item.notes && (
+                              <div className="text-[8px] text-neutral-600 italic">
+                                * Note: {item.notes}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                    
+                    {oldDisplayItems.length > 0 && (
+                      <>
+                        <tr className="bg-neutral-50 font-bold border-t border-b border-black text-[8px] text-neutral-600">
+                          <td colSpan={2} className="py-1 px-1 uppercase tracking-tight">Previously Printed / Old Items</td>
+                        </tr>
+                        {oldDisplayItems.map((item, idx) => (
+                          <tr key={`old-${idx}`} className="align-top border-b border-dotted border-neutral-200 opacity-60 line-through">
+                            <td className="py-1">{item.quantity}x</td>
+                            <td className="py-1">
+                              <span>{item.name}</span>
+                              {item.notes && (
+                                <div className="text-[8px] italic select-none">
+                                  * Note: {item.notes}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
+                  </>
                 ) : (
-                  displayItems.map((item, idx) => (
-                    <tr key={idx} className="align-top border-b border-dotted border-neutral-300">
-                      <td className="py-1 font-black">{item.quantity}x</td>
-                      <td className="py-1">
-                        <span className="font-bold">{item.name}</span>
-                        {item.notes && (
-                          <div className="text-[8px] text-neutral-600 italic">
-                            * Note: {item.notes}
-                          </div>
-                        )}
+                  displayItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="py-3 text-center text-neutral-500 italic">
+                        No matching items for this station.
                       </td>
-                      {selectedStation === "bill" && (
+                    </tr>
+                  ) : (
+                    displayItems.map((item, idx) => (
+                      <tr key={idx} className="align-top border-b border-dotted border-neutral-300">
+                        <td className="py-1 font-black">{item.quantity}x</td>
+                        <td className="py-1">
+                          <span className="font-bold">{item.name}</span>
+                          {item.notes && (
+                            <div className="text-[8px] text-neutral-600 italic">
+                              * Note: {item.notes}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-1 text-right font-bold font-mono">
                           ${(item.price * item.quantity).toFixed(2)}
                         </td>
-                      )}
-                    </tr>
-                  ))
+                      </tr>
+                    ))
+                  )
                 )}
               </tbody>
             </table>

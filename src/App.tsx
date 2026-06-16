@@ -63,9 +63,9 @@ function AppContent() {
     
     // Automatically pre-authenticate corresponding test role to make testing seamless and awesome!
     if (target === "pos") {
-      loginPin("5678"); // Log in Adrian Cashier
+      loginPin("5678"); // Log in Farhan
     } else if (target === "admin") {
-      loginAdmin("harirosman25@gmail.com", "harir123098@@"); // Log in Hari Rosman
+      loginAdmin("harirosman25@gmail.com", "Harirdev12@@"); // Log in Hari Rosman
     } else if (target === "kitchen") {
       loginPin("1470"); // Log in Chef Zul
     } else if (target === "barista") {
@@ -93,7 +93,7 @@ function AppContent() {
   const isDev = currentUser?.role === UserRole.DEVELOPER;
   const isManager = currentUser?.role === UserRole.MANAGER;
   const isCashier = currentUser?.role === UserRole.CASHIER;
-  const isWaiter = currentUser?.role === UserRole.WAITER;
+  const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
   const isChef = currentUser?.role === UserRole.KITCHEN;
   const isBrew = currentUser?.role === UserRole.BARISTA;
 
@@ -104,89 +104,95 @@ function AppContent() {
     <div className="min-h-screen bg-stone-900 flex flex-col justify-between relative">
       
       {/* Dynamic Multi-role Simulator Header - only visible to assist the grading evaluator */}
-      <div className="bg-neutral-950 text-white border-b border-neutral-900 px-6 py-2.5 shrink-0 relative z-30 hidden md:block">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-1.5 font-bold">
-            <Terminal className="w-4 h-4 text-amber-500 animate-pulse" />
-            <span className="text-stone-300">Evaluating:</span>
-            <span className="bg-amber-900/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded font-black font-mono">
-              ROLE SIMULATION SELECTOR
-            </span>
-          </div>
+      {!isWaiter && (
+        <div className="bg-neutral-950 text-white border-b border-neutral-900 px-6 py-2.5 shrink-0 relative z-30 hidden md:block">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-1.5 font-bold">
+              <Terminal className="w-4 h-4 text-amber-500 animate-pulse" />
+              <span className="text-stone-300">Evaluating:</span>
+              <span className="bg-amber-900/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded font-black font-mono">
+                ROLE SIMULATION SELECTOR
+              </span>
+            </div>
 
-          {/* Quick switcher buttons */}
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => triggerSimRoleSwitch("pos")}
-              className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
-                simulatorView === "pos" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
-              }`}
-            >
-              <Monitor className="w-3.5 h-3.5" />
-              Counter POS Terminal
-            </button>
-            <button 
-              onClick={() => triggerSimRoleSwitch("admin")}
-              className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
-                simulatorView === "admin" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Admin Management
-            </button>
-            <button 
-              onClick={() => triggerSimRoleSwitch("kitchen")}
-              className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
-                simulatorView === "kitchen" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              Kitchen Cooks Queue
-            </button>
-            <button 
-              onClick={() => triggerSimRoleSwitch("barista")}
-              className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
-                simulatorView === "barista" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
-              }`}
-            >
-              <Coffee className="w-3.5 h-3.5" />
-              Barista Cafe station
-            </button>
-            <button 
-              onClick={() => { logout(); setSimulatorView("customer"); }}
-              className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
-                simulatorView === "customer" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
-              }`}
-            >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              Customer Self-Orders QR
-            </button>
-          </div>
+            {/* Quick switcher buttons */}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => triggerSimRoleSwitch("pos")}
+                className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
+                  simulatorView === "pos" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
+                }`}
+              >
+                <Monitor className="w-3.5 h-3.5" />
+                Counter POS Terminal
+              </button>
+              {!isWaiter && (
+                <>
+                  <button 
+                    onClick={() => triggerSimRoleSwitch("admin")}
+                    className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
+                      simulatorView === "admin" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Admin Management
+                  </button>
+                  <button 
+                    onClick={() => triggerSimRoleSwitch("kitchen")}
+                    className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
+                      simulatorView === "kitchen" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    <Flame className="w-3.5 h-3.5" />
+                    Kitchen Cooks Queue
+                  </button>
+                  <button 
+                    onClick={() => triggerSimRoleSwitch("barista")}
+                    className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
+                      simulatorView === "barista" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    <Coffee className="w-3.5 h-3.5" />
+                    Barista Cafe station
+                  </button>
+                  <button 
+                    onClick={() => { logout(); setSimulatorView("customer"); }}
+                    className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
+                      simulatorView === "customer" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
+                    }`}
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    Customer Self-Orders QR
+                  </button>
+                </>
+              )}
+            </div>
 
-          {/* Quick simulator QR Launcher */}
-          <div className="flex items-center gap-2">
-            <span className="text-stone-400 font-bold block">Scan QR:</span>
-            <select 
-              value={selectedSimTable}
-              onChange={(e) => setSelectedSimTable(e.target.value)}
-              className="bg-neutral-900 border border-neutral-800 text-white rounded p-1 text-[11px] font-bold outline-none cursor-pointer"
-            >
-              {[...Array(50)].map((_, i) => {
-                const id = `LUNA-T${(i+1).toString().padStart(2, "0")}`;
-                return <option key={id} value={id}>{id}</option>;
-              })}
-            </select>
-            <button 
-              onClick={copySimLink}
-              title="Copy Customer Ordering Link for separate tab"
-              className="p-1 hover:bg-neutral-850 border border-neutral-800 rounded transition flex items-center gap-1.5 text-[10px] text-amber-400"
-            >
-              {copiedLink ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-              <span>{copiedLink ? "Copied" : "Copy"}</span>
-            </button>
+            {/* Quick simulator QR Launcher */}
+            <div className="flex items-center gap-2">
+              <span className="text-stone-400 font-bold block">Scan QR:</span>
+              <select 
+                value={selectedSimTable}
+                onChange={(e) => setSelectedSimTable(e.target.value)}
+                className="bg-neutral-900 border border-neutral-800 text-white rounded p-1 text-[11px] font-bold outline-none cursor-pointer"
+              >
+                {[...Array(50)].map((_, i) => {
+                  const id = `LUNA-T${(i+1).toString().padStart(2, "0")}`;
+                  return <option key={id} value={id}>{id}</option>;
+                })}
+              </select>
+              <button 
+                onClick={copySimLink}
+                title="Copy Customer Ordering Link for separate tab"
+                className="p-1 hover:bg-neutral-850 border border-neutral-800 rounded transition flex items-center gap-1.5 text-[10px] text-amber-400"
+              >
+                {copiedLink ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedLink ? "Copied" : "Copy"}</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main active layout */}
       <div className="flex-1 flex flex-col overflow-hidden relative">

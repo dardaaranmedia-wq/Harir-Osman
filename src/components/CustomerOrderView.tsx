@@ -107,7 +107,7 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
     setActiveTab("status");
   };
 
-  const filteredProducts = products.filter(p => !p.isArchived && p.available).filter(product => {
+  const filteredProducts = products.filter(p => !p.isArchived && p.available && p.createdByAdmin === true).filter(product => {
     // If there is an active search query, allow matching from all categories
     const matchCat = searchQuery ? true : (selectedCategory === "all" || product.categoryId === selectedCategory);
     const matchesName = product.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -415,72 +415,85 @@ export const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ tableIdPar
             </div>
 
             {/* Menu items list */}
-            <div className="grid grid-cols-2 gap-3.5">
-              {filteredProducts.map((p) => {
-                const inCart = cart.find(it => it.productId === p.id);
-                return (
-                  <div 
-                    key={p.id}
-                    className="bg-white rounded-xl overflow-hidden shadow-sm border border-neutral-100 flex flex-col hover:shadow transition relative"
-                  >
-                    <div className="h-28 w-full bg-neutral-200 relative overflow-hidden">
-                      <img 
-                        src={p.image} 
-                        alt={p.name}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = `https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=400`;
-                        }}
-                      />
-                      {!p.available && (
-                        <div className="absolute inset-0 bg-neutral-900/70 flex items-center justify-center backdrop-blur-xs">
-                          <span className="text-[10px] text-white bg-red-600 font-bold px-2 py-0.5 rounded-full tracking-wider uppercase">
-                            Sold Out
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* Alcohol/Coffee Tags icons */}
-                      <span className="absolute bottom-1.5 right-1.5 p-1 bg-white/90 backdrop-blur-xs rounded-full shadow text-[10px]">
-                        {p.isDrink ? <Coffee className="w-3.5 h-3.5 text-amber-700" /> : <Soup className="w-3.5 h-3.5 text-emerald-600" />}
-                      </span>
-                    </div>
-
-                    <div className="p-3 flex-1 flex flex-col justify-between">
-                      <div>
-                        <h4 className="font-extrabold text-xs text-neutral-800 line-clamp-2 min-h-[32px] leading-tight-custom">
-                          {p.name}
-                        </h4>
-                      </div>
-
-                      <div className="flex items-center justify-between mt-2 pt-1 border-t border-neutral-50">
-                        <span className="font-black text-xs text-neutral-900">${p.price.toFixed(2)}</span>
-                        
-                        {p.available ? (
-                          <button 
-                            onClick={() => handleAddToCart(p)}
-                            className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 ${
-                              inCart 
-                                ? "bg-amber-950 text-white" 
-                                : "bg-amber-100 text-amber-950 hover:bg-amber-200"
-                            }`}
-                          >
-                            {inCart ? (
-                              <span className="text-[10px] font-black">{inCart.quantity}</span>
-                            ) : (
-                              <Plus className="w-3.5 h-3.5 font-bold" />
-                            )}
-                          </button>
-                        ) : (
-                          <span className="text-[10px] text-neutral-400 font-semibold italic">Sold out</span>
+            {filteredProducts.length === 0 ? (
+              <div id="no-real-products-alert" className="p-8 text-center bg-white rounded-2xl border border-amber-900/20 shadow-sm mt-4">
+                <Soup className="w-12 h-12 mx-auto text-amber-800 mb-3 animate-pulse" />
+                <h3 className="font-sans font-black text-sm text-neutral-800 uppercase tracking-wider">Real Menu Database</h3>
+                <p className="text-xs text-neutral-500 mt-2 leading-relaxed font-sans">
+                  The Customer Self-Order page is loaded from the live database collection.
+                </p>
+                <div className="text-[10px] text-amber-800 font-bold bg-amber-50 rounded-xl p-3 border border-amber-200/50 mt-4 leading-normal">
+                  Go to <span className="underline font-black">Admin Management &rarr; Manage Menu</span> to add real products. Default demonstration, example, or sample items are excluded from self-ordering.
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3.5">
+                {filteredProducts.map((p) => {
+                  const inCart = cart.find(it => it.productId === p.id);
+                  return (
+                    <div 
+                      key={p.id}
+                      className="bg-white rounded-xl overflow-hidden shadow-sm border border-neutral-100 flex flex-col hover:shadow transition relative"
+                    >
+                      <div className="h-28 w-full bg-neutral-200 relative overflow-hidden">
+                        <img 
+                          src={p.image} 
+                          alt={p.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = `https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&q=80&w=400`;
+                          }}
+                        />
+                        {!p.available && (
+                          <div className="absolute inset-0 bg-neutral-900/70 flex items-center justify-center backdrop-blur-xs">
+                            <span className="text-[10px] text-white bg-red-600 font-bold px-2 py-0.5 rounded-full tracking-wider uppercase">
+                              Sold Out
+                            </span>
+                          </div>
                         )}
+                        
+                        {/* Alcohol/Coffee Tags icons */}
+                        <span className="absolute bottom-1.5 right-1.5 p-1 bg-white/90 backdrop-blur-xs rounded-full shadow text-[10px]">
+                          {p.isDrink ? <Coffee className="w-3.5 h-3.5 text-amber-700" /> : <Soup className="w-3.5 h-3.5 text-emerald-600" />}
+                        </span>
+                      </div>
+
+                      <div className="p-3 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h4 className="font-extrabold text-xs text-neutral-800 line-clamp-2 min-h-[32px] leading-tight-custom">
+                            {p.name}
+                          </h4>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-neutral-50">
+                          <span className="font-black text-xs text-neutral-900">${p.price.toFixed(2)}</span>
+                          
+                          {p.available ? (
+                            <button 
+                              onClick={() => handleAddToCart(p)}
+                              className={`w-7 h-7 rounded-full flex items-center justify-center transition active:scale-95 ${
+                                inCart 
+                                  ? "bg-amber-950 text-white" 
+                                  : "bg-amber-100 text-amber-950 hover:bg-amber-200"
+                              }`}
+                            >
+                              {inCart ? (
+                                <span className="text-[10px] font-black">{inCart.quantity}</span>
+                              ) : (
+                                <Plus className="w-3.5 h-3.5 font-bold" />
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-neutral-400 font-semibold italic">Sold out</span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </main>

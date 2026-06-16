@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { LunaLogo } from "./LunaLogo";
 import { ReceiptView } from "./ReceiptPrinters";
+import { INITIAL_CATEGORIES, INITIAL_PRODUCTS } from "../data";
 
 export const AdminPanel: React.FC = () => {
   const { 
@@ -47,7 +48,7 @@ export const AdminPanel: React.FC = () => {
   const [editCatImage, setEditCatImage] = useState("");
 
   // Selected Category ID
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("cat-breakfast");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("cat-main");
   const [isAddingProductInline, setIsAddingProductInline] = useState(true);
   const [adminProductSearch, setAdminProductSearch] = useState("");
 
@@ -269,7 +270,7 @@ export const AdminPanel: React.FC = () => {
     
     const imgUrl = prodImage || `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400`;
 
-    const targetCatId = prodCategory || selectedCategoryId || categories[0]?.id || "cat-breakfast";
+    const targetCatId = prodCategory || selectedCategoryId || categories[0]?.id || "cat-main";
 
     addProduct({
       name: prodName,
@@ -753,7 +754,7 @@ export const AdminPanel: React.FC = () => {
                   }
 
                   if (o.status === OrderStatus.PAID) {
-                    const cName = o.cashierName || "Siti";
+                    const cName = o.cashierName || "Farhan";
                     if (!cashierSales[cName]) {
                       cashierSales[cName] = { count: 0, total: 0 };
                     }
@@ -951,20 +952,12 @@ export const AdminPanel: React.FC = () => {
                   <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                   Delete All Products
                 </button>
-                <button
+                 <button
                   type="button"
                   onClick={() => {
-                    const customCats: Category[] = [
-                      { id: "cat-steep", name: "Artisanal Brews", icon: "Coffee" },
-                      { id: "cat-bakers", name: "Artisanal Bakes", icon: "Cake" },
-                    ];
-                    const customProds: Product[] = [
-                      { id: "prod-matcha", name: "Ceremonial Kyoto Matcha", categoryId: "cat-steep", price: 5.8, available: true, isDrink: true, image: "https://images.unsplash.com/photo-1536256263959-770b48d82b0a?auto=format&fit=crop&q=80&w=400" },
-                      { id: "prod-pastry", name: "Fresh Butter Croissant Duo", categoryId: "cat-bakers", price: 4.5, available: true, isDrink: false, image: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=400" },
-                    ];
                     if (confirm("Do you want to import a newly designed custom menu? This will replace your catalog.")) {
-                      importNewMenu(customCats, customProds);
-                      setSelectedCategoryId("cat-steep");
+                      importNewMenu(INITIAL_CATEGORIES, INITIAL_PRODUCTS);
+                      setSelectedCategoryId("cat-main");
                     }
                   }}
                   className="px-3 py-1.5 bg-stone-900 hover:bg-stone-850 border border-stone-850 rounded-xl text-stone-250 hover:text-[#E5C158] font-bold text-[10px] uppercase transition cursor-pointer flex items-center gap-1.5"
@@ -991,7 +984,7 @@ export const AdminPanel: React.FC = () => {
                   onClick={() => {
                     if (confirm("Reset to factory Luna Café standard default menus?")) {
                       reseedDefaultMenu();
-                      setSelectedCategoryId("cat-breakfast");
+                      setSelectedCategoryId("cat-main");
                     }
                   }}
                   className="px-3 py-1.5 bg-[#E5C158] hover:bg-amber-450 rounded-xl text-stone-950 font-black text-[10px] uppercase transition cursor-pointer flex items-center gap-1.5"
@@ -1419,74 +1412,23 @@ export const AdminPanel: React.FC = () => {
              ============================================== */
           <div className="flex-1 overflow-hidden flex gap-6">
             
-            {/* Adding user form */}
-            <div className="w-80 bg-stone-900 border border-stone-850 p-5 rounded-3xl h-fit space-y-4 shrink-0">
-              <h3 className="font-black text-xs text-[#E5C158] uppercase tracking-widest pb-1 border-b border-stone-800">
-                Enroll Shift Employee
-              </h3>
-
-              <form onSubmit={handleAddUser} className="space-y-3.5 text-xs">
-                <div className="space-y-1">
-                  <label className="font-bold text-stone-400 uppercase tracking-wider block">Employee Name</label>
-                  <input 
-                    type="text" required placeholder="E.g. Siti Nur"
-                    value={newUserName} onChange={(e) => setNewUserName(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 outline-none focus:border-[#E5C158]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-stone-400 uppercase tracking-wider block">Assigned Auth/Shift Role</label>
-                  <select 
-                    value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as any)}
-                    className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 font-bold outline-none cursor-pointer text-stone-200"
-                  >
-                    <option value={UserRole.WAITER}>{UserRole.WAITER}</option>
-                    <option value={UserRole.CASHIER}>{UserRole.CASHIER}</option>
-                    <option value={UserRole.MANAGER}>{UserRole.MANAGER}</option>
-                    <option value={UserRole.KITCHEN}>{UserRole.KITCHEN}</option>
-                    <option value={UserRole.BARISTA}>{UserRole.BARISTA}</option>
-                    <option value={UserRole.DEVELOPER}>{UserRole.DEVELOPER} / ADMIN</option>
-                  </select>
-                </div>
-
-                {(newUserRole === UserRole.DEVELOPER || newUserRole === UserRole.MANAGER) ? (
-                  <>
-                    <div className="space-y-1 animate-fadeIn">
-                      <label className="font-bold text-stone-400 uppercase tracking-wider block">System Admin Email (Login user)</label>
-                      <input 
-                        type="email" required placeholder="name@lunacafe.com"
-                        value={newUserMail} onChange={(e) => setNewUserMail(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 text-white font-mono"
-                      />
-                    </div>
-                    <div className="space-y-1 animate-fadeIn">
-                      <label className="font-bold text-stone-400 uppercase tracking-wider block">Security Password</label>
-                      <input 
-                        type="password" required placeholder="Enter password"
-                        value={newUserPass} onChange={(e) => setNewUserPass(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 text-white font-mono"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-1 animate-fadeIn">
-                    <label className="font-bold text-stone-400 uppercase tracking-wider block">Secure 4-Digit PIN Code</label>
-                    <input 
-                      type="text" maxLength={4} required placeholder="E.g. 7890"
-                      value={newUserPin} onChange={(e) => setNewUserPin(e.target.value.replace(/\D/g, ""))}
-                      className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 font-mono tracking-widest text-center text-sm font-black text-amber-400"
-                    />
-                  </div>
-                )}
-
-                <button 
-                  type="submit"
-                  className="w-full py-3 bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 font-black rounded-xl transition font-mono uppercase tracking-wider cursor-pointer"
-                >
-                  Generate Credentials
-                </button>
-              </form>
+            {/* Locked Registry Notice */}
+            <div className="w-80 bg-stone-900 border border-stone-850 p-6 rounded-3xl h-fit space-y-5 shrink-0 text-center flex flex-col items-center">
+              <div className="w-12 h-12 rounded-full bg-amber-950/20 border border-amber-900/40 flex items-center justify-center text-[#E5C158] animate-pulse">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-extrabold text-sm text-[#E5C158] uppercase tracking-wider">
+                  Registry State: Locked
+                </h3>
+                <p className="text-stone-400 text-[11px] leading-relaxed">
+                  The active system staff credentials directory is synchronized with the restaurant's official registry. Manual creation of new employee files is strictly restricted.
+                </p>
+              </div>
+              <div className="w-full pt-4 border-t border-stone-800/85 flex items-center justify-center gap-2 text-[10px] uppercase font-black text-stone-500 tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                Enrollment Locked
+              </div>
             </div>
 
             {/* Employee lists */}
@@ -2979,4 +2921,41 @@ function shouldShowCheckoutButton(user) {
 
 function shouldShowMarkPaidButton(user) {
   return can(user, "canMarkPaid");
+}function printOnlyNew(order, station) {
+  const items = order.items.filter(i => i.station === station && !i.printed);
+
+  if (!items.length) return alert("No new " + station + " items");
+
+  const text = `
+LUNA CAFÈ
+${station.toUpperCase()} ORDER
+Table: ${order.tableNumber}
+Order: ${order.orderNumber}
+----------------
+${items.map(i => `${i.name} x${i.qty}`).join("\n")}
+----------------
+${new Date().toLocaleString()}
+`;
+
+  const w = window.open("", "", "width=300,height=500");
+  w.document.write(`<pre style="font-family:monospace;font-size:13px">${text}</pre>`);
+  w.print();
+  w.close();
+
+  order.items.forEach(i => {
+    if (i.station === station && !i.printed) i.printed = true;
+  });
+
+  return order;
+}async function editWaiterName(orderId: string, newWaiterName: string, updateOrderWaiter?: (id: string, name: string) => void) {
+  if (!newWaiterName.trim()) return alert("Enter waiter name");
+
+  if (updateOrderWaiter) {
+    updateOrderWaiter(orderId, newWaiterName.trim());
+  } else {
+    // If called outside of components, do a direct alert
+    console.log(`Updated waiter name for order ${orderId} to: ${newWaiterName}`);
+  }
+
+  alert("Waiter name updated");
 }

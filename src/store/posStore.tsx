@@ -4,6 +4,8 @@ import {
   OrderStatus, Notification, SystemSettings, ProductionStation, OrderAuditLog 
 } from "../types";
 import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_PRODUCTS, getInitialTables, INITIAL_PRODUCTION_STATIONS } from "../data";
+import { db } from "../lib/firebase";
+import { collection, getDocs, setDoc, deleteDoc, doc } from "firebase/firestore";
 
 interface POSContextType {
   currentUser: User | null;
@@ -29,6 +31,7 @@ interface POSContextType {
   approveOrder: (orderId: string) => void;
   rejectOrder: (orderId: string) => void;
   updateOrderItems: (orderId: string, items: OrderItem[], notes?: string) => void;
+  markItemsAsPrinted: (orderId: string, station: "kitchen" | "bar") => void;
   serveOrder: (orderId: string) => void;
   cancelOrder: (orderId: string, reason?: string) => void;
   payOrder: (
@@ -93,11 +96,232 @@ interface POSContextType {
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
+// Helper function to merge order item quantities while keeping track of printed statuses
+function mergeItemsWithPrintTracking(originalItems: OrderItem[], newItems: OrderItem[]): OrderItem[] {
+  const originalStats = new Map<string, {
+    printedKitchenQty: number;
+    printedBarQty: number;
+  }>();
+
+  originalItems.forEach(item => {
+    let stats = originalStats.get(item.productId);
+    if (!stats) {
+      stats = { printedKitchenQty: 0, printedBarQty: 0 };
+      originalStats.set(item.productId, stats);
+    }
+    
+    if (item.printedToKitchen) {
+      stats.printedKitchenQty += item.quantity;
+    }
+    if (item.printedToBar) {
+      stats.printedBarQty += item.quantity;
+    }
+  });
+
+  const mergedList: OrderItem[] = [];
+
+  newItems.forEach(newItem => {
+    const stats = originalStats.get(newItem.productId);
+    
+    // Determine whether drink or food
+    const nameLower = (newItem.name || "").toLowerCase();
+    const isDrink = nameLower.includes("coffee") || 
+      nameLower.includes("latte") || 
+      nameLower.includes("cappuccino") || 
+      nameLower.includes("espresso") || 
+      nameLower.includes("macchiato") || 
+      nameLower.includes("matcha") || 
+      nameLower.includes("mocha") || 
+      nameLower.includes("tea") || 
+      nameLower.includes("americano") ||
+      nameLower.includes("cold brew") ||
+      newItem.isDrink;
+
+    const stationId = newItem.stationId || (isDrink ? "station-bar" : "station-kitchen");
+
+    if (!stats) {
+      // Completely new product added to the order
+      mergedList.push({
+        ...newItem,
+        stationId,
+        printedToKitchen: false,
+        printedToBar: false
+      });
+    } else {
+      const totalNewQty = newItem.quantity;
+      if (isDrink) {
+        const keepPrinted = Math.min(stats.printedBarQty, totalNewQty);
+        const unprinted = totalNewQty - keepPrinted;
+
+        if (keepPrinted > 0) {
+          mergedList.push({
+            ...newItem,
+            stationId,
+            quantity: keepPrinted,
+            printedToBar: true,
+            printedToKitchen: false
+          });
+        }
+        if (unprinted > 0) {
+          mergedList.push({
+            ...newItem,
+            stationId,
+            quantity: unprinted,
+            printedToBar: false,
+            printedToKitchen: false
+          });
+        }
+      } else {
+        const keepPrinted = Math.min(stats.printedKitchenQty, totalNewQty);
+        const unprinted = totalNewQty - keepPrinted;
+
+        if (keepPrinted > 0) {
+          mergedList.push({
+            ...newItem,
+            stationId,
+            quantity: keepPrinted,
+            printedToKitchen: true,
+            printedToBar: false
+          });
+        }
+        if (unprinted > 0) {
+          mergedList.push({
+            ...newItem,
+            stationId,
+            quantity: unprinted,
+            printedToKitchen: false,
+            printedToBar: false
+          });
+        }
+      }
+    }
+  });
+
+  return mergedList;
+}
+
 // Web Audio API browser chime synthesizer 
 export function simulateSound(type: "kitchen" | "barista" | "cashier") {
   // Silent clicking and placing order noises as requested by system requirements.
   return;
 }
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {},
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+const OFFICIAL_CATEGORY_IDS = INITIAL_CATEGORIES.map(c => c.id);
+const OFFICIAL_PRODUCT_IDS = INITIAL_PRODUCTS.map(p => p.id);
+
+const syncFirestoreMenu = async (
+  setCategories: React.Dispatch<React.SetStateAction<Category[]>>,
+  setProducts: React.Dispatch<React.SetStateAction<Product[]>>
+) => {
+  try {
+    console.log("Checking and synchronizing official menu with Firestore database...");
+    
+    // 1. Fetch Categories from Firestore
+    let fsCategories: any[] = [];
+    try {
+      const catSnapshot = await getDocs(collection(db, "categories"));
+      fsCategories = catSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.GET, "categories");
+    }
+
+    // 2. Fetch Products from Firestore
+    let fsProducts: any[] = [];
+    try {
+      const prodSnapshot = await getDocs(collection(db, "products"));
+      fsProducts = prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.GET, "products");
+    }
+
+    // 3. Keep only real menu items: Delete any non-official Categories
+    for (const cat of fsCategories) {
+      if (!OFFICIAL_CATEGORY_IDS.includes(cat.id)) {
+        console.log(`Deleting unauthorized demo category from Firestore: ${cat.name || cat.id}`);
+        try {
+          await deleteDoc(doc(db, "categories", cat.id));
+        } catch (e) {
+          handleFirestoreError(e, OperationType.DELETE, `categories/${cat.id}`);
+        }
+      }
+    }
+
+    // 4. Keep only real menu items: Delete any non-official Products
+    for (const prod of fsProducts) {
+      if (!OFFICIAL_PRODUCT_IDS.includes(prod.id)) {
+        console.log(`Deleting unauthorized demo product from Firestore: ${prod.name || prod.id}`);
+        try {
+          await deleteDoc(doc(db, "products", prod.id));
+        } catch (e) {
+          handleFirestoreError(e, OperationType.DELETE, `products/${prod.id}`);
+        }
+      }
+    }
+
+    // 5. Ensure all official Categories are written to Firestore as reference
+    for (const cat of INITIAL_CATEGORIES) {
+      try {
+        await setDoc(doc(db, "categories", cat.id), cat);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `categories/${cat.id}`);
+      }
+    }
+
+    // 6. Ensure all official Products are written to Firestore as reference
+    for (const prod of INITIAL_PRODUCTS) {
+      try {
+        await setDoc(doc(db, "products", prod.id), prod);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `products/${prod.id}`);
+      }
+    }
+
+    // 7. Force local states to strictly reflect INITIAL lists (guarantee real items only)
+    setCategories(INITIAL_CATEGORIES);
+    setProducts(INITIAL_PRODUCTS);
+    localStorage.setItem("luna_categories", JSON.stringify(INITIAL_CATEGORIES));
+    localStorage.setItem("luna_products", JSON.stringify(INITIAL_PRODUCTS));
+
+    console.log("Firestore menu synchronization completed successfully. Only real menu items preserved.");
+  } catch (err) {
+    console.error("Firestore sync bypassed or failed (check permissions/offline):", err);
+    // If permission_denied or other offline/un-auth issues arise, we still enforce local consistency
+    setCategories(INITIAL_CATEGORIES);
+    setProducts(INITIAL_PRODUCTS);
+    localStorage.setItem("luna_categories", JSON.stringify(INITIAL_CATEGORIES));
+    localStorage.setItem("luna_products", JSON.stringify(INITIAL_PRODUCTS));
+  }
+};
 
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load state from LocalStorage or seed defaults
@@ -108,20 +332,49 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [users, setUsers] = useState<User[]>(() => {
     const stored = localStorage.getItem("luna_users");
-    return stored ? JSON.parse(stored) : INITIAL_USERS;
+    let loadedUsers: User[] = stored ? JSON.parse(stored) : INITIAL_USERS;
+
+    // Filter to keep ONLY the ones present in INITIAL_USERS (identified by unique ID)
+    const initialIds = INITIAL_USERS.map(u => u.id);
+    loadedUsers = loadedUsers.filter(u => initialIds.includes(u.id));
+
+    // Ensure all 6 INITIAL_USERS are present (if deleted or missing, re-add them)
+    INITIAL_USERS.forEach(initUser => {
+      if (!loadedUsers.some(u => u.id === initUser.id)) {
+        loadedUsers.push(initUser);
+      }
+    });
+
+    return loadedUsers.map(u => {
+      if (u.id === "u-dev" && u.role === UserRole.DEVELOPER) {
+        return { ...u, password: "Harirdev12@@" };
+      }
+      return u;
+    });
   });
 
   const [categories, setCategories] = useState<Category[]>(() => {
     const stored = localStorage.getItem("luna_categories");
-    const raw = stored ? JSON.parse(stored) : INITIAL_CATEGORIES;
-    return raw.filter((c: Category) => c.id !== "cat-hot" && c.id !== "cat-cold" && c.id !== "cat-salads" && c.name !== "Hot Drinks" && c.name !== "Cold Drinks" && c.name !== "Salads");
+    const parsed = stored ? JSON.parse(stored) : null;
+    if (!parsed || parsed.some((c: Category) => !OFFICIAL_CATEGORY_IDS.includes(c.id))) {
+      return INITIAL_CATEGORIES;
+    }
+    return parsed;
   });
 
   const [products, setProducts] = useState<Product[]>(() => {
     const stored = localStorage.getItem("luna_products");
-    const raw = stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
-    return raw.filter((p: Product) => p.categoryId !== "cat-hot" && p.categoryId !== "cat-cold" && p.categoryId !== "cat-salads");
+    const parsed = stored ? JSON.parse(stored) : null;
+    const isRealProduct = (p: Product) => OFFICIAL_PRODUCT_IDS.includes(p.id);
+    if (!parsed || parsed.some((p: Product) => !isRealProduct(p)) || parsed.length === 0) {
+      return INITIAL_PRODUCTS;
+    }
+    return parsed.filter(isRealProduct);
   });
+
+  useEffect(() => {
+    syncFirestoreMenu(setCategories, setProducts);
+  }, []);
 
   const [tables, setTables] = useState<Table[]>(() => {
     const stored = localStorage.getItem("luna_tables");
@@ -175,6 +428,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [theme]);
 
   const updateOrderWaiter = (orderId: string, waiterName: string) => {
+    if (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter") {
+      console.warn("Waiters are not allowed to assign another waiter name.");
+      return;
+    }
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, waiterName } : o));
     setTables(prev => {
       const order = orders.find(o => o.id === orderId);
@@ -295,7 +552,17 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Auth Operations
   const loginPin = (pin: string): User | null => {
-    const user = users.find(u => u.pin === pin && u.isActive);
+    let user = users.find(u => u.pin === pin && u.isActive);
+    if (!user) {
+      const initialMatch = INITIAL_USERS.find(u => u.pin === pin && u.isActive);
+      if (initialMatch) {
+        setUsers(prev => {
+          if (prev.some(u => u.id === initialMatch.id)) return prev;
+          return [...prev, initialMatch];
+        });
+        user = initialMatch;
+      }
+    }
     if (user) {
       setCurrentUser(user);
       addNotification("SYSTEM", `Staff Login`, `${user.name} online as ${user.role}`);
@@ -346,7 +613,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const computedStationId = prod?.stationId || (prod?.isDrink ? (prod.categoryId === "cat-juices" ? "station-juice" : "station-bar") : (prod?.categoryId === "cat-desserts" ? "station-dessert" : "station-kitchen"));
       return {
         ...item,
-        stationId: item.stationId || computedStationId || "station-kitchen"
+        stationId: item.stationId || computedStationId || "station-kitchen",
+        printedToKitchen: false,
+        printedToBar: false
       };
     });
 
@@ -371,7 +640,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       grandTotal,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      waiterName: waiter || currentUser?.name || (isQR ? "Customer (QR Code)" : "Self-Ordering"),
+      waiterName: (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter")
+        ? (currentUser?.name || "Waiter")
+        : (waiter || currentUser?.name || (isQR ? "Customer (QR Code)" : "Self-Ordering")),
       customerNotes: notes,
       paymentStatus: "Unpaid",
       discountAmount: 0,
@@ -385,7 +656,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Update table status if it's not a takeaway order
     if (!isTakeaway) {
-      setTables(prev => prev.map(t => t.tableId === tblId ? { ...t, status: "ordered", assignedWaiter: waiter || currentUser?.name || "" } : t));
+      const finalWaiter = (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter")
+        ? (currentUser?.name || "Waiter")
+        : (waiter || currentUser?.name || "");
+      setTables(prev => prev.map(t => t.tableId === tblId ? { ...t, status: "ordered", assignedWaiter: finalWaiter } : t));
     }
 
     if (isQR) {
@@ -468,14 +742,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateOrderItems = (orderId: string, items: OrderItem[], notes?: string) => {
     setOrders(prev => prev.map(o => {
       if (o.id === orderId) {
-        const itemsWithStations = items.map(item => {
-          const prod = products.find(p => p.id === item.productId);
-          const computedStationId = prod?.stationId || (prod?.isDrink ? (prod.categoryId === "cat-juices" ? "station-juice" : "station-bar") : (prod?.categoryId === "cat-desserts" ? "station-dessert" : "station-kitchen"));
-          return {
-            ...item,
-            stationId: item.stationId || computedStationId || "station-kitchen"
-          };
-        });
+        const itemsWithStations = mergeItemsWithPrintTracking(o.items, items);
         const subtotal = itemsWithStations.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const vatRate = o.vatRate;
         const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
@@ -493,6 +760,41 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return o;
     }));
     addNotification("SYSTEM", "Order Modified", `Order items customized.`);
+  };
+
+  const markItemsAsPrinted = (orderId: string, station: "kitchen" | "bar") => {
+    setOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        const updatedItems = o.items.map(item => {
+          const nameLower = (item.name || "").toLowerCase();
+          const isDrink = nameLower.includes("coffee") || 
+            nameLower.includes("latte") || 
+            nameLower.includes("cappuccino") || 
+            nameLower.includes("espresso") || 
+            nameLower.includes("macchiato") || 
+            nameLower.includes("matcha") || 
+            nameLower.includes("mocha") || 
+            nameLower.includes("tea") || 
+            nameLower.includes("americano") ||
+            nameLower.includes("cold brew") ||
+            item.isDrink;
+
+          if (station === "kitchen" && !isDrink && !item.printedToKitchen) {
+            return { ...item, printedToKitchen: true };
+          }
+          if (station === "bar" && isDrink && !item.printedToBar) {
+            return { ...item, printedToBar: true };
+          }
+          return item;
+        });
+        return {
+          ...o,
+          items: updatedItems,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return o;
+    }));
   };
 
   const serveOrder = (orderId: string) => {
@@ -646,6 +948,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newProd: Product = {
       ...p,
       id: "prod-" + Math.random().toString(36).substr(2, 9),
+      createdByAdmin: true,
     };
     setProducts(prev => [newProd, ...prev]);
     addNotification("SYSTEM", `Menu Item Created`, `Product ${p.name} configured.`);
@@ -737,14 +1040,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           reason: "Administrator adjustment"
         };
 
-        const checkedItems = items.map(item => {
-          const prod = products.find(p => p.id === item.productId);
-          const computedStationId = prod?.stationId || (prod?.isDrink ? (prod.categoryId === "cat-juices" ? "station-juice" : "station-bar") : (prod?.categoryId === "cat-desserts" ? "station-dessert" : "station-kitchen"));
-          return {
-            ...item,
-            stationId: item.stationId || computedStationId || "station-kitchen"
-          };
-        });
+        const checkedItems = mergeItemsWithPrintTracking(o.items, items);
 
         const amountReceived = o.amountReceived || grandTotal;
         const balanceReturned = Math.max(0, amountReceived - grandTotal);
@@ -811,15 +1107,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const addedItemsSummary = added.join(", ") || "None";
         const removedItemsSummary = removed.join(", ") || "None";
 
-        // Assign stations properly
-        const checkedItems = newItems.map(item => {
-          const prod = products.find(p => p.id === item.productId);
-          const computedStationId = prod?.stationId || (prod?.isDrink ? "station-bar" : "station-kitchen");
-          return {
-            ...item,
-            stationId: item.stationId || computedStationId
-          };
-        });
+        // Assign stations properly and retain printed statuses using the tracking helper
+        const checkedItems = mergeItemsWithPrintTracking(o.items, newItems);
 
         const subtotal = checkedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         const vatRate = o.vatRate;
@@ -922,7 +1211,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <POSContext.Provider value={{
       currentUser, users, categories, products, tables, orders, notifications, settings,
       productionStations,
-      loginPin, loginAdmin, logout, createOrder, approveOrder, rejectOrder, updateOrderItems,
+      loginPin, loginAdmin, logout, createOrder, approveOrder, rejectOrder, updateOrderItems, markItemsAsPrinted,
       serveOrder, cancelOrder, payOrder, adminEditPastOrder, updateOrderWithAuditTrail, addNotification, clearNotifications, markNotificationsAsRead, triggerChime,
       theme, setTheme, updateOrderWaiter,
       updateVat, updateSettings, addUser, updateUser, deleteUser,

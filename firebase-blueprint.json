@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "Category for items on the menu",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique category identifier" },
+        "name": { "type": "string", "description": "Display name of category" },
+        "icon": { "type": "string", "description": "Lucide icon name" },
+        "image": { "type": "string", "description": "Optional category banner image URL" }
+      },
+      "required": ["id", "name", "icon"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Individual product on the menu",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product identifier" },
+        "name": { "type": "string", "description": "Name of the item" },
+        "categoryId": { "type": "string", "description": "Reference to Category ID" },
+        "price": { "type": "number", "description": "Selling price of item" },
+        "available": { "type": "boolean", "description": "Is this product currently available" },
+        "image": { "type": "string", "description": "URL of item image" },
+        "isDrink": { "type": "boolean", "description": "Is this item a beverage" },
+        "description": { "type": "string", "description": "Short description of the item" },
+        "stationId": { "type": "string", "description": "Id of the production station responsible for preparing this" },
+        "isArchived": { "type": "boolean", "description": "Has this item been deleted/archived" },
+        "createdByAdmin": { "type": "boolean", "description": "Whether created by Admin" }
+      },
+      "required": ["id", "name", "categoryId", "price", "available", "isDrink"]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Menu categories collection"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Menu items collection"
+    }
+  }
+}

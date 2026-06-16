@@ -52,6 +52,7 @@ export interface Product {
   description?: string; // Optional descriptive text E.g. "Classic pepperoni pizza"
   isArchived?: boolean;
   stationId?: string; // assigned production station
+  createdByAdmin?: boolean; // Real menu items created by Admin
 }
 
 export interface Table {
@@ -72,6 +73,8 @@ export interface OrderItem {
   notes?: string;
   isDrink: boolean;
   stationId?: string;
+  printedToKitchen?: boolean;
+  printedToBar?: boolean;
 }
 
 export enum OrderStatus {
@@ -139,3 +142,37 @@ export interface SystemSettings {
   logoUrl?: string;
   printerPaperWidth: "80mm" | "58mm";
 }
+
+export function getSomaliaToday(): string {
+  try {
+    const d = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Africa/Mogadishu",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(d);
+    let year = "";
+    let month = "";
+    let day = "";
+    for (const part of parts) {
+      if (part.type === "year") year = part.value;
+      if (part.type === "month") month = part.value;
+      if (part.type === "day") day = part.value;
+    }
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  } catch (e) {
+    console.error("Error getting Somalia date", e);
+  }
+  
+  // Fallback
+  const now = new Date();
+  const yr = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, "0");
+  const da = String(now.getDate()).padStart(2, "0");
+  return `${yr}-${mo}-${da}`;
+}
+

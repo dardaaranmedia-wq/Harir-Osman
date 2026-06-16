@@ -9,167 +9,488 @@ export const INITIAL_PRODUCTION_STATIONS: ProductionStation[] = [
 ];
 
 export const INITIAL_CATEGORIES: Category[] = [
-  { id: "cat-breakfast", name: "Breakfast", icon: "Egg" },
-  { id: "cat-burgers", name: "Burgers", icon: "Layers" },
-  { id: "cat-pizza", name: "Pizza", icon: "Pizza" },
-  { id: "cat-pasta", name: "Pasta", icon: "Soup" },
-  { id: "cat-sandwiches", name: "Sandwiches", icon: "MenuSub" },
-  { id: "cat-desserts", name: "Desserts", icon: "Cake" },
-  { id: "cat-juices", name: "Fresh Juices", icon: "GlassWater" },
-  { id: "cat-smoothies", name: "Smoothies", icon: "Milk" },
+  { id: "cat-smoothies", name: "Smoothies", icon: "GlassWater", image: "https://images.unsplash.com/photo-1553530979-7ee52a2670c4?auto=format&fit=crop&q=80&w=400" },
+  { id: "cat-main", name: "Main Selections", icon: "Utensils", image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=400" },
+  { id: "cat-burgers", name: "Burgers", icon: "ShoppingBag", image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=400" },
+  { id: "cat-sandwiches", name: "Sandwiches", icon: "Flame", image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&q=80&w=400" },
+  { id: "cat-pizza", name: "Pizza", icon: "ChefHat", image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&q=80&w=400" },
+  { id: "cat-mojitos", name: "Mojitos", icon: "GlassWater", image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400" },
+  { id: "cat-tea-coffee", name: "Tea & Coffee", icon: "Coffee", image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400" },
 ];
 
 export const INITIAL_PRODUCTS: Product[] = [
-  // Breakfast
+  // SMOOTHIES
   {
-    id: "prod-avo-toast",
-    name: "Classic Avocado Toast",
-    categoryId: "cat-breakfast",
+    id: "prod-caana-muus",
+    name: "Caana Muus",
+    categoryId: "cat-smoothies",
+    price: 3.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1571006886908-0bf3f7bc4d4e?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-caana-laws",
+    name: "Caana Laws",
+    categoryId: "cat-smoothies",
+    price: 3.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-smoothie-strawberry",
+    name: "Strawberry",
+    categoryId: "cat-smoothies",
+    price: 4.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1553530979-7ee52a2670c4?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-smoothie-mango",
+    name: "Mango",
+    categoryId: "cat-smoothies",
+    price: 4.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1553530979-7ee52a2670c4?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-smoothie-xalib",
+    name: "Xalib",
+    categoryId: "cat-smoothies",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1553530979-7ee52a2670c4?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-smoothie-watermelon",
+    name: "Watermelon",
+    categoryId: "cat-smoothies",
+    price: 3.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1553530979-7ee52a2670c4?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-smoothie-cocktail",
+    name: "Cocktail",
+    categoryId: "cat-smoothies",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1553530979-7ee52a2670c4?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-smoothie-orange",
+    name: "Orange",
+    categoryId: "cat-smoothies",
+    price: 3.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1553530979-7ee52a2670c4?auto=format&fit=crop&q=80&w=400"
+  },
+
+  // MAIN SELECTIONS
+  {
+    id: "prod-hilib-geel",
+    name: "Hilib Geel",
+    categoryId: "cat-main",
+    price: 9.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-hilib-ari",
+    name: "Hilib Ari",
+    categoryId: "cat-main",
+    price: 9.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-hanid",
+    name: "Hanid",
+    categoryId: "cat-main",
+    price: 10.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1514516345957-556ca7d90a29?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-dhaylo",
+    name: "Dhaylo",
+    categoryId: "cat-main",
     price: 8.5,
     available: true,
     isDrink: false,
-    image: "https://images.unsplash.com/photo-1541532713592-79a0317b6b77?auto=format&fit=crop&q=80&w=400",
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=400"
   },
   {
-    id: "prod-croissant",
-    name: "Butter Croissant",
-    categoryId: "cat-breakfast",
-    price: 3.8,
+    id: "prod-suqaar-hafaayn",
+    name: "Suqaar Hafaayn",
+    categoryId: "cat-main",
+    price: 8.0,
     available: true,
     isDrink: false,
-    image: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=400",
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=400"
   },
   {
-    id: "prod-pancakes",
-    name: "Maple Syrup Pancakes",
-    categoryId: "cat-breakfast",
-    price: 9.2,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&q=80&w=400",
-  },
-
-  // Burgers
-  {
-    id: "prod-smashburger",
-    name: "Luna Craft Smashburger",
-    categoryId: "cat-burgers",
-    price: 11.5,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=400",
-  },
-  {
-    id: "prod-chickenburger",
-    name: "Crispy Buttermilk Chicken Burger",
-    categoryId: "cat-burgers",
-    price: 12.0,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1625813506062-0aeb1d7a094b?auto=format&fit=crop&q=80&w=400",
-  },
-
-  // Pizza
-  {
-    id: "prod-pizza-margherita",
-    name: "Pizza Margherita",
-    categoryId: "cat-pizza",
-    price: 13.5,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?auto=format&fit=crop&q=80&w=400",
-  },
-  {
-    id: "prod-pizza-pep",
-    name: "Double Pepperoni Pizza",
-    categoryId: "cat-pizza",
-    price: 15.0,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?auto=format&fit=crop&q=80&w=400",
-  },
-
-  // Pasta
-  {
-    id: "prod-pasta-carb",
-    name: "Creamy Fettuccine Carbonara",
-    categoryId: "cat-pasta",
-    price: 14.5,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1612874742237-6526221588e3?auto=format&fit=crop&q=80&w=400",
-  },
-  {
-    id: "prod-pasta-bolo",
-    name: "Spaghetti Bolognese",
-    categoryId: "cat-pasta",
-    price: 13.8,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&q=80&w=400",
-  },
-
-  // Sandwiches
-  {
-    id: "prod-club-sandwich",
-    name: "Triple-Decker Club Sandwich",
-    categoryId: "cat-sandwiches",
-    price: 10.5,
-    available: true,
-    isDrink: false,
-    image: "https://images.unsplash.com/photo-1521390188846-e2a3a97453a0?auto=format&fit=crop&q=80&w=400",
-  },
-
-  // Desserts
-  {
-    id: "prod-lava-cake",
-    name: "Molten Chocolate Lava Cake",
-    categoryId: "cat-desserts",
+    id: "prod-chicken-suqaar",
+    name: "Chicken Suqaar",
+    categoryId: "cat-main",
     price: 7.5,
     available: true,
     isDrink: false,
-    image: "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&q=80&w=400",
+    image: "https://images.unsplash.com/photo-1608897013039-887f21d8c804?auto=format&fit=crop&q=80&w=400"
   },
   {
-    id: "prod-cheesecake",
-    name: "Strawberry New York Cheesecake",
-    categoryId: "cat-desserts",
-    price: 6.8,
+    id: "prod-chicken-curry",
+    name: "Chicken Curry",
+    categoryId: "cat-main",
+    price: 7.5,
     available: true,
     isDrink: false,
-    image: "https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&q=80&w=400",
+    image: "https://images.unsplash.com/photo-1608897013039-887f21d8c804?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-fish-curry",
+    name: "Fish Curry",
+    categoryId: "cat-main",
+    price: 8.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1514516345957-556ca7d90a29?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-grilled-fish",
+    name: "Grilled Fish",
+    categoryId: "cat-main",
+    price: 9.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1514516345957-556ca7d90a29?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-fish-finger",
+    name: "Fish Finger",
+    categoryId: "cat-main",
+    price: 7.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1514516345957-556ca7d90a29?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-fish-masala",
+    name: "Fish Masala",
+    categoryId: "cat-main",
+    price: 8.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1514516345957-556ca7d90a29?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-chicken-chips",
+    name: "Chicken Chips",
+    categoryId: "cat-main",
+    price: 6.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-chicken-crispy",
+    name: "Chicken Crispy",
+    categoryId: "cat-main",
+    price: 7.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-quesadilla",
+    name: "Quesadilla",
+    categoryId: "cat-main",
+    price: 6.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1626700051175-6518c4793f4f?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-burrito",
+    name: "Burrito",
+    categoryId: "cat-main",
+    price: 6.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1626700051175-6518c4793f4f?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-sambusa",
+    name: "sambusa",
+    categoryId: "cat-main",
+    price: 1.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?auto=format&fit=crop&q=80&w=400"
   },
 
-  // Juices
+  // BURGERS
   {
-    id: "prod-orange-juice",
-    name: "Cold-Pressed Orange Juice",
-    categoryId: "cat-juices",
+    id: "prod-burger-chicken",
+    name: "Chicken Burger",
+    categoryId: "cat-burgers",
     price: 5.5,
     available: true,
-    isDrink: true,
-    image: "https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?auto=format&fit=crop&q=80&w=400",
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-burger-fish",
+    name: "Fish Burger",
+    categoryId: "cat-burgers",
+    price: 5.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-burger-beef",
+    name: "Beef Burger",
+    categoryId: "cat-burgers",
+    price: 6.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=400"
   },
 
-  // Smoothies
+  // SANDWICHES
   {
-    id: "prod-strawberry-smoothie",
-    name: "Strawberry Banana Protein Smoothie",
-    categoryId: "cat-smoothies",
-    price: 6.5,
+    id: "prod-sandwich-fish",
+    name: "Fish Sandwich",
+    categoryId: "cat-sandwiches",
+    price: 5.0,
     available: true,
-    isDrink: true,
-    image: "https://images.unsplash.com/photo-1553530666-ba11a7da3888?auto=format&fit=crop&q=80&w=400",
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&q=80&w=400"
   },
   {
-    id: "prod-mango-smoothie",
-    name: "Alphonso Mango Coconut Smoothie",
-    categoryId: "cat-smoothies",
-    price: 6.5,
+    id: "prod-sandwich-chicken",
+    name: "Chicken Sandwich",
+    categoryId: "cat-sandwiches",
+    price: 5.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&q=80&w=400"
+  },
+
+  // PIZZA
+  {
+    id: "prod-pizza-large",
+    name: "Pizza Large",
+    categoryId: "cat-pizza",
+    price: 12.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-pizza-medium",
+    name: "Pizza Medium",
+    categoryId: "cat-pizza",
+    price: 9.5,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-pizza-small",
+    name: "Pizza Small",
+    categoryId: "cat-pizza",
+    price: 7.0,
+    available: true,
+    isDrink: false,
+    image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&q=80&w=400"
+  },
+
+  // MOJITOS
+  {
+    id: "prod-mojito-blueberry",
+    name: "Blueberry Mojito",
+    categoryId: "cat-mojitos",
+    price: 4.5,
     available: true,
     isDrink: true,
-    image: "https://images.unsplash.com/photo-1536882240095-0379873feb4e?auto=format&fit=crop&q=80&w=400",
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400"
   },
+  {
+    id: "prod-mojito-blue",
+    name: "Blue Mojito",
+    categoryId: "cat-mojitos",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-mojito-strawberry",
+    name: "Strawberry Mojito",
+    categoryId: "cat-mojitos",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-mojito-pineapple",
+    name: "Pineapple Mojito",
+    categoryId: "cat-mojitos",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-mojito-passion",
+    name: "Passion Fruit Mojito",
+    categoryId: "cat-mojitos",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-mojito-mango",
+    name: "Mango Mojito",
+    categoryId: "cat-mojitos",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-mojito-raspberry",
+    name: "Raspberry Mojito",
+    categoryId: "cat-mojitos",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&q=80&w=400"
+  },
+
+  // TEA & COFFEE
+  {
+    id: "prod-coffee-latte",
+    name: "Caffè Latte",
+    categoryId: "cat-tea-coffee",
+    price: 4.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-cappuccino",
+    name: "Cappuccino",
+    categoryId: "cat-tea-coffee",
+    price: 4.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1572442388796-11668a67e53d?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-chaidaawa",
+    name: "Chai Daawa",
+    categoryId: "cat-tea-coffee",
+    price: 3.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-tea",
+    name: "Tea",
+    categoryId: "cat-tea-coffee",
+    price: 2.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-limotea",
+    name: "Limo Tea",
+    categoryId: "cat-tea-coffee",
+    price: 2.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-greentea",
+    name: "Green Tea",
+    categoryId: "cat-tea-coffee",
+    price: 2.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-espresso",
+    name: "Espresso",
+    categoryId: "cat-tea-coffee",
+    price: 2.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1510591509382-7434e0b2d6f0?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-macchiato",
+    name: "Macchiato",
+    categoryId: "cat-tea-coffee",
+    price: 3.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-icecoffee",
+    name: "Ice Coffee",
+    categoryId: "cat-tea-coffee",
+    price: 4.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-spanishlatte",
+    name: "Spanish Latte",
+    categoryId: "cat-tea-coffee",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-icecaramellatte",
+    name: "Ice Caramel Latte",
+    categoryId: "cat-tea-coffee",
+    price: 4.5,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?auto=format&fit=crop&q=80&w=400"
+  },
+  {
+    id: "prod-coffee-frappuccino",
+    name: "Frappuccino",
+    categoryId: "cat-tea-coffee",
+    price: 5.0,
+    available: true,
+    isDrink: true,
+    image: "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?auto=format&fit=crop&q=80&w=400"
+  }
 ];
 
 // Generate Tables 1 to 50
@@ -196,9 +517,44 @@ export const INITIAL_USERS: User[] = [
   {
     id: "u-dev",
     username: "harirosman25@gmail.com",
-    password: "harir123098@@",
+    password: "Harirdev12@@",
     name: "Hari Rosman",
     role: UserRole.DEVELOPER,
+    isActive: true,
+  },
+  {
+    id: "u-cashier-farhan",
+    name: "Farhan",
+    role: UserRole.CASHIER,
+    pin: "5678",
+    isActive: true,
+  },
+  {
+    id: "u-cashier-dayib",
+    name: "Dayib",
+    role: UserRole.CASHIER,
+    pin: "5679",
+    isActive: true,
+  },
+  {
+    id: "u-waiter-farhan",
+    name: "Farhan Waiter",
+    role: UserRole.WAITER,
+    pin: "1234",
+    isActive: true,
+  },
+  {
+    id: "u-waiter-mohamed-dek",
+    name: "MOHAMED DEK",
+    role: UserRole.WAITER,
+    pin: "8168",
+    isActive: true,
+  },
+  {
+    id: "u-waiter-ayax",
+    name: "AYAX",
+    role: UserRole.WAITER,
+    pin: "1122",
     isActive: true,
   },
 ];

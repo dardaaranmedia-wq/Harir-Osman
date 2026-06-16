@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { usePOS } from "../store/posStore";
-import { Order, OrderItem, OrderStatus, Product, Table, UserRole } from "../types";
+import { Order, OrderItem, OrderStatus, Product, Table, UserRole, getSomaliaToday } from "../types";
 import { 
   Coffee, Layers, Check, ShoppingCart, Search, Plus, Minus, Trash2, 
-  MessageSquare, Printer, CheckCircle, Flame, Coffee as Cup, ShieldCheck, X, FileText, ChevronRight, AlertTriangle
+  MessageSquare, Printer, CheckCircle, Flame, Coffee as Cup, ShieldCheck, X, FileText, ChevronRight, AlertTriangle,
+  Edit, Save, Calendar
 } from "lucide-react";
 import { ReceiptView } from "./ReceiptPrinters";
 import { LunaLogo } from "./LunaLogo";
@@ -12,21 +13,34 @@ export const StaffDashboard: React.FC = () => {
   const { 
     currentUser, categories, products, tables, orders, settings, users,
     createOrder, approveOrder, rejectOrder, updateOrderItems, serveOrder, cancelOrder, payOrder, logout,
-    theme, setTheme, updateOrderWaiter, updateOrderWithAuditTrail
+    theme, setTheme, updateOrderWaiter, updateOrderWithAuditTrail,
+    updateProduct
   } = usePOS();
 
   // Screen modes: "order" (Create Order) or "queue" (Order Queue manager)
-  const [activeScreen, setActiveScreen] = useState<"order" | "queue">(() => 
-    currentUser?.role === "Waiter" ? "queue" : "order"
-  );
+  const [activeScreen, setActiveScreen] = useState<"order" | "queue">("order");
   
+  const isUserWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
+
   // Dashboard Order Queue Tab (1 = New, 2 = Served, 3 = Paid, 4 = QR Pending)
-  const [queueTab, setQueueTab] = useState<OrderStatus | "Pending">((currentUser?.role === "Waiter") ? OrderStatus.NEW : "Pending");
+  const [queueTab, setQueueTab] = useState<OrderStatus | "Pending">(isUserWaiter ? OrderStatus.NEW : "Pending");
 
   // Selection states inside "Create Order" mode
   const [selectedTable, setSelectedTable] = useState<string>("LUNA-T01");
   const [orderCustomerType, setOrderCustomerType] = useState<"Dine-In" | "Takeaway">("Dine-In");
-  const [assignedWaiterName, setAssignedWaiterName] = useState<string>("");
+  const [assignedWaiterName, setAssignedWaiterName] = useState<string>(isUserWaiter ? (currentUser?.name || "") : "");
+
+  // Sync queueTab and assignedWaiterName when currentUser changes or logs in
+  React.useEffect(() => {
+    const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
+    if (isWaiter) {
+      setQueueTab(OrderStatus.NEW);
+      setAssignedWaiterName(currentUser?.name || "");
+    } else {
+      setQueueTab("Pending");
+      setAssignedWaiterName("");
+    }
+  }, [currentUser]);
   const [tableSearch, setTableSearch] = useState<string>("");
   const [orderCategory, setOrderCategory] = useState<string>("all");
   const [productSearch, setProductSearch] = useState<string>("");
@@ -43,6 +57,72 @@ export const StaffDashboard: React.FC = () => {
   const [printKitchenChecked, setPrintKitchenChecked] = useState(true);
   const [printBaristaChecked, setPrintBaristaChecked] = useState(true);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [filterDate, setFilterDate] = useState<string>(getSomaliaToday());
+
+  const canEditWaiter = currentUser?.role === UserRole.DEVELOPER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.CASHIER;
+
+  // Waiter editing state variables
+  const [editingWaiterOrder, setEditingWaiterOrder] = useState<Order | null>(null);
+  const [selectedWaiterName, setSelectedWaiterName] = useState("");
+
+  const handleOpenWaiterEdit = (order: Order) => {
+    setEditingWaiterOrder(order);
+    setSelectedWaiterName(order.waiterName || "");
+  };
+
+  const handleSaveWaiterEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingWaiterOrder) {
+      updateOrderWaiter(editingWaiterOrder.id, selectedWaiterName);
+      setEditingWaiterOrder(null);
+    }
+  };
+
+  // Quick Edit Product dashboard state variables
+  const [dashboardEditingProduct, setDashboardEditingProduct] = useState<Product | null>(null);
+  const [dashEditName, setDashEditName] = useState("");
+  const [dashEditPrice, setDashEditPrice] = useState(0);
+  const [dashEditAvailable, setDashEditAvailable] = useState(true);
+  const [dashEditCategory, setDashEditCategory] = useState("");
+  const [dashEditStation, setDashEditStation] = useState("");
+  const [dashEditDescription, setDashEditDescription] = useState("");
+
+  const handleOpenDashEdit = (p: Product) => {
+    setDashboardEditingProduct(p);
+    setDashEditName(p.name);
+    setDashEditPrice(p.price);
+    setDashEditAvailable(!!p.available);
+    setDashEditCategory(p.categoryId);
+    setDashEditStation(p.stationId || "station-kitchen");
+    setDashEditDescription(p.description || "");
+  };
+
+  const handleSaveDashProductEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dashboardEditingProduct) return;
+    updateProduct(dashboardEditingProduct.id, {
+      name: dashEditName,
+      price: dashEditPrice,
+      available: dashEditAvailable,
+      categoryId: dashEditCategory,
+      stationId: dashEditStation,
+      description: dashEditDescription
+    });
+    
+    // Sync active tray items names/prices if they were updated
+    setTrayItems(prev => prev.map(it => {
+      if (it.productId === dashboardEditingProduct.id) {
+        return {
+          ...it,
+          name: dashEditName,
+          price: dashEditPrice
+        };
+      }
+      return it;
+    }));
+
+    setDashboardEditingProduct(null);
+  };
 
   // Filter tables to pick
   const filteredTablesToPick = tables.filter(t => 
@@ -102,10 +182,11 @@ export const StaffDashboard: React.FC = () => {
     );
 
     // Reset Tray
+    const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
     setTrayItems([]);
     setTrayNotes({});
     setGeneralTrayComment("");
-    setAssignedWaiterName("");
+    setAssignedWaiterName(isWaiter ? (currentUser?.name || "") : "");
     setOrderCustomerType("Dine-In");
     
     // Switch to queue
@@ -113,8 +194,39 @@ export const StaffDashboard: React.FC = () => {
     setQueueTab(OrderStatus.NEW);
   };
 
+  // Helper to match order with selected filterDate
+  const orderMatchesDate = (o: Order) => {
+    if (!filterDate) return true;
+    try {
+      const d = new Date(o.createdAt);
+      const yr = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      const da = String(d.getDate()).padStart(2, "0");
+      const localDateStr = `${yr}-${mo}-${da}`;
+      return localDateStr === filterDate;
+    } catch (err) {
+      return o.createdAt.startsWith(filterDate);
+    }
+  };
+
   // Filter orders by active queue tab selection
-  const filteredOrders = orders.filter(o => {
+  const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
+  const visibleOrders = orders.filter(o => {
+    if (!isWaiter) return true;
+    
+    // For a waiter, they should only see their own orders for NEW, SERVED, and PAID status.
+    const status = o.status;
+    if (status === OrderStatus.NEW || status === OrderStatus.SERVED || status === OrderStatus.PAID) {
+      const waiterMatch = (o.waiterName || "").toLowerCase().trim() === (currentUser?.name || "").toLowerCase().trim() ||
+                          (o.waiterName || "").toLowerCase().trim().includes((currentUser?.name || "").toLowerCase().replace("waiter", "").trim()) ||
+                          (currentUser?.name || "").toLowerCase().trim().includes((o.waiterName || "").toLowerCase().replace("waiter", "").trim());
+      return waiterMatch;
+    }
+    return true;
+  });
+
+  const filteredOrders = visibleOrders.filter(o => {
+    if (!orderMatchesDate(o)) return false;
     // Tab 4 is Customer self order Pending QR
     if (queueTab === "Pending") {
       return o.status === OrderStatus.PENDING_QR;
@@ -140,6 +252,10 @@ export const StaffDashboard: React.FC = () => {
   const [customerTypeVal, setCustomerTypeVal] = useState<"Dine-In" | "Takeaway" | "Delivery">("Dine-In");
 
   const handleOpenCheckout = (order: Order) => {
+    if (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter") {
+      alert("Waiters are not allowed to settle payment or mark orders as paid.");
+      return;
+    }
     setPaymentActiveOrder(order);
     setPaymentMethod("Cash");
     setPaymentRefNo("");
@@ -156,6 +272,10 @@ export const StaffDashboard: React.FC = () => {
 
   const submitCheckoutPayment = () => {
     if (!paymentActiveOrder) return;
+    if (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter") {
+      alert("Waiters are not allowed to settle payment or mark orders as paid.");
+      return;
+    }
     const receivedAmount = paymentMethod === "Cash" 
       ? (parseFloat(amountReceivedVal) || checkoutGrandTotal)
       : checkoutGrandTotal;
@@ -205,6 +325,11 @@ export const StaffDashboard: React.FC = () => {
 
   const updateEditQty = (prodId: string, delta: number) => {
     if (!editingOrder) return;
+    const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
+    if (isWaiter && delta < 0) {
+      alert("Waiters are only allowed to add items, not to remove or decrease quantities on served or paid orders.");
+      return;
+    }
     const updatedItems = editingOrder.items.map(it => {
       if (it.productId === prodId) {
         const next = it.quantity + delta;
@@ -261,6 +386,32 @@ export const StaffDashboard: React.FC = () => {
     setEditReason("");
   };
 
+  const markOrderPaid = (orderId?: string) => {
+    if (currentUser?.role?.toLowerCase() === "waiter") {
+      alert("Waiters are not allowed to settle payment or mark orders as paid.");
+      return;
+    }
+    if (orderId) {
+      payOrder(orderId, "Cash", currentUser?.name || "Staff", "", 0, 0, 0, "Dine-In");
+      alert("Order marked as paid.");
+    } else {
+      alert("Demonstrating permission validation: Allowed!");
+    }
+  };
+
+  const deleteOrder = (orderId?: string) => {
+    if (currentUser?.role?.toLowerCase() === "waiter") {
+      alert("Waiters are not allowed to delete orders.");
+      return;
+    }
+    if (orderId) {
+      cancelOrder(orderId, "Deleted by staff");
+      alert("Order deleted.");
+    } else {
+      alert("Demonstrating permission validation: Allowed!");
+    }
+  };
+
   return (
     <div id="staff-workspace" className="min-h-screen bg-stone-100 flex flex-col font-sans select-none overflow-hidden h-screen">
 
@@ -314,38 +465,32 @@ export const StaffDashboard: React.FC = () => {
         </div>
 
         {/* View toggles */}
-        {currentUser?.role !== "Waiter" ? (
-          <div className="flex bg-amber-900/40 p-1 rounded-xl border border-amber-800/50">
-            <button 
-              onClick={() => setActiveScreen("order")}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                activeScreen === "order" ? "bg-amber-900 text-white shadow-md" : "text-amber-200/80 hover:text-white"
-              }`}
-            >
-              <ShoppingCart className="w-4 h-4" />
-              Create POS Order
-            </button>
-            
-            <button 
-              onClick={() => setActiveScreen("queue")}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 relative ${
-                activeScreen === "queue" ? "bg-amber-900 text-white shadow-md" : "text-amber-200/80 hover:text-white"
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              Order Queue Manager
-              {orders.some(o => o.status === OrderStatus.PENDING_QR) && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-bounce">
-                  {orders.filter(o => o.status === OrderStatus.PENDING_QR).length}
-                </span>
-              )}
-            </button>
-          </div>
-        ) : (
-          <div className="bg-amber-900/40 p-1 rounded-xl border border-amber-800/50 px-4 py-2 text-amber-300 font-extrabold uppercase text-[10px] tracking-widest">
-            Waiter Portal
-          </div>
-        )}
+        <div className="flex bg-amber-900/40 p-1 rounded-xl border border-amber-800/50">
+          <button 
+            onClick={() => setActiveScreen("order")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+              activeScreen === "order" ? "bg-amber-900 text-white shadow-md" : "text-amber-200/80 hover:text-white"
+            }`}
+          >
+            <ShoppingCart className="w-4 h-4" />
+            Create POS Order
+          </button>
+          
+          <button 
+            onClick={() => setActiveScreen("queue")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 relative ${
+              activeScreen === "queue" ? "bg-amber-900 text-white shadow-md" : "text-amber-200/80 hover:text-white"
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            Order Queue Manager
+            {visibleOrders.some(o => o.status === OrderStatus.PENDING_QR) && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-bounce">
+                {visibleOrders.filter(o => o.status === OrderStatus.PENDING_QR).length}
+              </span>
+            )}
+          </button>
+        </div>
 
         {/* Theme mode selector */}
         <div className="flex bg-amber-900/40 p-1 rounded-xl border border-amber-800/50 items-center">
@@ -419,37 +564,43 @@ export const StaffDashboard: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs uppercase tracking-widest text-stone-500 font-extrabold flex items-center gap-2">
                     <FileText className="w-4 h-4 text-stone-400" />
-                    Matching Orders ({orders.filter(o => 
-                      o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
-                      o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                    Matching Orders ({visibleOrders.filter(o => 
+                      orderMatchesDate(o) && (
+                        o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                        o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                      )
                     ).length})
                   </h3>
                 </div>
 
-                {orders.filter(o => 
-                  o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                  o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                  o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                  o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                  (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
-                  o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                {visibleOrders.filter(o => 
+                  orderMatchesDate(o) && (
+                    o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                    o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                    o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                    o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                    (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                    o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                  )
                 ).length === 0 ? (
                   <div className="bg-white rounded-2xl p-8 border border-neutral-200 text-center text-stone-400 space-y-3">
                     <p className="text-xs">No registered orders match your current lookup criteria.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {orders.filter(o => 
-                      o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
-                      (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
-                      o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                    {visibleOrders.filter(o => 
+                      orderMatchesDate(o) && (
+                        o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        o.tableId?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        o.waiterName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                        (o.customerNotes && o.customerNotes.toLowerCase().includes(globalSearchQuery.toLowerCase())) ||
+                        o.items.some(item => item.name.toLowerCase().includes(globalSearchQuery.toLowerCase()))
+                      )
                     ).map((order) => (
                       <div key={order.id} className="bg-white border border-stone-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4 relative overflow-hidden">
                         <div className={`absolute top-0 left-0 right-0 h-1.5 ${
@@ -468,8 +619,18 @@ export const StaffDashboard: React.FC = () => {
                                 {order.tableName}
                               </span>
                             </h4>
-                            <span className="text-[10px] text-stone-400 font-medium block mt-0.5">
-                              Server: {order.waiterName || "Counter POS"}
+                            <span className="text-[10px] text-stone-400 font-medium block mt-0.5 whitespace-nowrap">
+                              Server: <span className="font-bold text-stone-700">{order.waiterName || "Counter POS"}</span>
+                              {canEditWaiter && (
+                                <button
+                                  onClick={() => handleOpenWaiterEdit(order)}
+                                  className="inline-flex items-center gap-0.5 ml-2 px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-stone-600 rounded text-[9px] font-bold transition border border-stone-200 cursor-pointer"
+                                  title="Edit Waiter Name"
+                                >
+                                  <Edit className="w-2.5 h-2.5" />
+                                  Edit Waiter
+                                </button>
+                              )}
                             </span>
                           </div>
                           <div className="text-right">
@@ -716,6 +877,17 @@ export const StaffDashboard: React.FC = () => {
                               (e.target as HTMLImageElement).src = `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400`;
                             }}
                           />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDashEdit(p);
+                            }}
+                            className="absolute top-1.5 left-1.5 p-1.5 bg-neutral-900/75 hover:bg-neutral-900 text-white rounded-lg backdrop-blur-xs border border-white/20 transition-all cursor-pointer z-10 hover:scale-105 active:scale-95 flex items-center justify-center shadow-md"
+                            title="Edit Product Details"
+                          >
+                            <Edit className="w-3 h-3" />
+                          </button>
                           {!p.available && (
                             <div className="absolute inset-0 bg-neutral-900/60 flex items-center justify-center">
                               <span className="text-[10px] text-white bg-red-600 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
@@ -817,8 +989,8 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                 )}
 
-                {/* Optional Waiter Assign option for cashiers/managers/devs */}
-                {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
+                {/* Optional Waiter Assign option */}
+                {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
                   <div className="space-y-1">
                     <h3 className="text-xs uppercase tracking-widest font-black text-neutral-500">
                       Assign Waiter
@@ -952,25 +1124,49 @@ export const StaffDashboard: React.FC = () => {
              ============================================== */
           <div className="flex-1 flex flex-col overflow-hidden">
             
+            {/* Prominent Select Order Date Header */}
+            <div className="bg-neutral-50 border-b border-neutral-200 px-6 py-3.5 shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-amber-950" />
+                <span className="text-xs font-black uppercase tracking-wider text-amber-950">Select Order Date</span>
+                <span className="text-[9px] px-2 py-0.5 bg-amber-100/50 border border-amber-200/50 rounded-md text-amber-900 font-extrabold uppercase font-mono shadow-2xs">Somalia Zone</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  required
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-neutral-300 hover:border-amber-950 text-neutral-900 rounded-xl text-xs font-black outline-none tracking-tight focus:ring-1 focus:ring-amber-950 font-sans shadow-2xs cursor-pointer min-w-[140px]"
+                />
+                
+                <div className="text-[10px] text-neutral-400 font-bold uppercase hidden sm:block ml-2 select-none">
+                  Tracking {filteredOrders.length} records
+                </div>
+              </div>
+            </div>
+
             {/* Horizontal sub-tabs selector */}
             <div className="bg-white border-b border-neutral-200 px-6 py-2 shrink-0 flex items-center justify-between overflow-x-auto">
               <div className="flex gap-2">
                 
                 {/* Tab 4: QR self-orders Pending (Orange) */}
-                <button 
-                  onClick={() => setQueueTab("Pending")}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
-                    queueTab === "Pending" 
-                      ? "bg-amber-500 text-black border-amber-500 shadow-sm" 
-                      : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100/50"
-                  }`}
-                >
-                  <span className="w-2.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
-                  Pending QR Orders
-                  <span className="ml-1 bg-white border border-amber-300 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.PENDING_QR).length}
-                  </span>
-                </button>
+                {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (
+                  <button 
+                    onClick={() => setQueueTab("Pending")}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                      queueTab === "Pending" 
+                        ? "bg-amber-500 text-black border-amber-500 shadow-sm" 
+                        : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100/50"
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
+                    Pending QR Orders
+                    <span className="ml-1 bg-white border border-amber-300 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                      {visibleOrders.filter(o => o.status === OrderStatus.PENDING_QR && orderMatchesDate(o)).length}
+                    </span>
+                  </button>
+                )}
 
                 {/* Tab 1: New order list confirmed (Blue) */}
                 <button 
@@ -984,7 +1180,7 @@ export const StaffDashboard: React.FC = () => {
                   <span className="w-2.5 h-2.5 bg-blue-500 rounded-full" />
                   New Orders
                   <span className="ml-1 bg-white border border-blue-300 text-blue-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.NEW).length}
+                    {visibleOrders.filter(o => o.status === OrderStatus.NEW && orderMatchesDate(o)).length}
                   </span>
                 </button>
 
@@ -1000,7 +1196,7 @@ export const StaffDashboard: React.FC = () => {
                   <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping-slow" />
                   Served to Table
                   <span className="ml-1 bg-white border border-emerald-305 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.SERVED).length}
+                    {visibleOrders.filter(o => o.status === OrderStatus.SERVED && orderMatchesDate(o)).length}
                   </span>
                 </button>
 
@@ -1016,30 +1212,34 @@ export const StaffDashboard: React.FC = () => {
                   <span className="w-2.5 h-2.5 bg-neutral-400 rounded-full" />
                   Paid History
                   <span className="ml-1 bg-white border border-neutral-300 text-neutral-600 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.PAID).length}
+                    {visibleOrders.filter(o => o.status === OrderStatus.PAID && orderMatchesDate(o)).length}
                   </span>
                 </button>
 
                 {/* Tab 5: Cancelled Orders (Red) */}
-                <button 
-                  onClick={() => setQueueTab(OrderStatus.CANCELLED)}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
-                    queueTab === OrderStatus.CANCELLED 
-                      ? "bg-red-600 text-white border-red-600 shadow-xs" 
-                      : "bg-red-50 text-red-700 border-red-100 hover:bg-red-100/50"
-                  }`}
-                >
-                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full" />
-                  Cancelled Orders
-                  <span className="ml-1 bg-white border border-red-300 text-red-700 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {orders.filter(o => o.status === OrderStatus.CANCELLED).length}
-                  </span>
-                </button>
+                {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (
+                  <button 
+                    onClick={() => setQueueTab(OrderStatus.CANCELLED)}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                      queueTab === OrderStatus.CANCELLED 
+                        ? "bg-red-650 text-white border-red-600 shadow-xs" 
+                        : "bg-red-50 text-red-700 border-red-100 hover:bg-red-100/50"
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 bg-red-500 rounded-full" />
+                    Cancelled Orders
+                    <span className="ml-1 bg-white border border-red-300 text-red-700 text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                      {visibleOrders.filter(o => o.status === OrderStatus.CANCELLED && orderMatchesDate(o)).length}
+                    </span>
+                  </button>
+                )}
 
               </div>
               
-              <div className="text-[10px] text-neutral-400 font-bold uppercase invisible md:visible">
-                Tracking {filteredOrders.length} records
+              <div className="flex items-center gap-3 shrink-0 ml-4 py-1">
+                <div className="text-[10px] text-neutral-400 font-bold uppercase hidden sm:block">
+                  Active View: <span className="font-extrabold text-stone-700">{filteredOrders.length} matches</span>
+                </div>
               </div>
             </div>
 
@@ -1089,6 +1289,19 @@ export const StaffDashboard: React.FC = () => {
                               {order.tableName}
                             </span>
                           </h4>
+                          <div className="text-[10px] text-stone-500 font-medium flex items-center gap-1.5 mt-1.5 whitespace-nowrap">
+                            Server: <span className="font-extrabold text-stone-800">{order.waiterName || "Counter POS"}</span>
+                            {canEditWaiter && (
+                              <button
+                                onClick={() => handleOpenWaiterEdit(order)}
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-neutral-100 hover:bg-neutral-200 text-stone-600 rounded text-[9px] font-bold transition border border-stone-200 cursor-pointer"
+                                title="Edit Waiter Name"
+                              >
+                                <Edit className="w-2.5 h-2.5 text-stone-500" />
+                                Edit Waiter
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="text-right">
                           <span className="text-[10px] text-neutral-400 font-bold block">TOTAL AMOUNT</span>
@@ -1228,13 +1441,15 @@ export const StaffDashboard: React.FC = () => {
                             </div>
                             
                             {/* Payout channels via Settle and Checkout modal */}
-                            <button 
-                                onClick={() => handleOpenCheckout(order)}
-                                className="w-full bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 text-[11px] font-black py-3 rounded-lg shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
-                            >
-                              <CheckCircle className="w-4 h-4" />
-                              Settle & Checkout Bill
-                            </button>
+                            {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (
+                              <button 
+                                  onClick={() => handleOpenCheckout(order)}
+                                  className="w-full bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 text-[11px] font-black py-3 rounded-lg shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                                Settle & Checkout Bill
+                              </button>
+                            )}
 
                             {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
                               <button 
@@ -1277,22 +1492,24 @@ export const StaffDashboard: React.FC = () => {
                         {order.status === OrderStatus.PAID && (
                           /* History details display */
                           <div className="text-[10px] text-neutral-500 bg-neutral-50 p-2 rounded-lg space-y-0.5">
-                            <div>Checked out by Cashier: <b className="text-neutral-800">{order.cashierName || "Siti"}</b></div>
+                            <div>Checked out by Cashier: <b className="text-neutral-800">{order.cashierName || "Farhan"}</b></div>
                             <div>Paid Category: <b className="text-neutral-800">{order.paymentMethod || "Cash"}</b></div>
                             <div>Checkout Time: <b className="text-neutral-800">{new Date(order.updatedAt).toLocaleTimeString()}</b></div>
-                            <div className="grid grid-cols-2 gap-2 mt-2">
+                            <div className={`grid gap-2 mt-2 ${currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter" ? "grid-cols-1" : "grid-cols-2"}`}>
                               <button 
                                 onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
-                                className="text-blue-600 hover:underline hover:bg-blue-50/50 block py-1.5 rounded font-extrabold text-center uppercase border border-blue-100 text-[10px]"
+                                className="text-blue-600 hover:underline hover:bg-blue-50/50 block py-1.5 rounded font-extrabold text-center uppercase border border-blue-100 text-[10px] w-full"
                               >
                                 Reprint Bill
                               </button>
-                              <button 
-                                onClick={() => startEditingPending(order)}
-                                className="text-neutral-600 hover:bg-neutral-105 block py-1.5 rounded font-extrabold text-center uppercase border border-neutral-250 text-[10px]"
-                              >
-                                Edit Items
-                              </button>
+                              {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (
+                                <button 
+                                  onClick={() => startEditingPending(order)}
+                                  className="text-neutral-600 hover:bg-neutral-105 block py-1.5 rounded font-extrabold text-center uppercase border border-neutral-250 text-[10px]"
+                                >
+                                  Edit Items
+                                </button>
+                              )}
                             </div>
                             {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
                               <button 
@@ -1667,13 +1884,15 @@ export const StaffDashboard: React.FC = () => {
                             </div>
                             
                             <div className="flex items-center gap-1.5 shrink-0">
-                              <button 
-                                type="button"
-                                onClick={() => updateEditQty(it.productId, -1)}
-                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
-                              >
-                                <Minus className="w-3 h-3 text-neutral-600" />
-                              </button>
+                              {(!currentUser || (currentUser.role !== UserRole.WAITER && currentUser.role?.toLowerCase() !== "waiter")) && (
+                                <button 
+                                  type="button"
+                                  onClick={() => updateEditQty(it.productId, -1)}
+                                  className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
+                                >
+                                  <Minus className="w-3 h-3 text-neutral-600" />
+                                </button>
+                              )}
                               
                               <span className="text-xs font-black w-5 text-center select-none text-neutral-800">{it.quantity}</span>
                               
@@ -1685,14 +1904,16 @@ export const StaffDashboard: React.FC = () => {
                                 <Plus className="w-3 h-3 text-neutral-600" />
                               </button>
                               
-                              <button 
-                                type="button"
-                                onClick={() => updateEditQty(it.productId, -it.quantity)}
-                                className="ml-1 p-1 hover:bg-red-50 text-red-500 rounded-md transition cursor-pointer"
-                                title="Remove item"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {(!currentUser || (currentUser.role !== UserRole.WAITER && currentUser.role?.toLowerCase() !== "waiter")) && (
+                                <button 
+                                  type="button"
+                                  onClick={() => updateEditQty(it.productId, -it.quantity)}
+                                  className="ml-1 p-1 hover:bg-red-50 text-red-500 rounded-md transition cursor-pointer"
+                                  title="Remove item"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -1867,6 +2088,17 @@ export const StaffDashboard: React.FC = () => {
                                   (e.target as HTMLImageElement).src = `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400`;
                                 }}
                               />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenDashEdit(p);
+                                }}
+                                className="absolute bottom-1 left-1 p-1 bg-neutral-900/75 hover:bg-neutral-900 text-white rounded-md backdrop-blur-xs border border-white/10 transition-all cursor-pointer z-10 hover:scale-105 active:scale-95 flex items-center justify-center shadow-xs"
+                                title="Edit Product Details"
+                              >
+                                <Edit className="w-2.5 h-2.5" />
+                              </button>
                               <div className="absolute top-1 right-1 flex flex-col gap-1 items-end">
                                 {p.isDrink ? (
                                   <span className="px-1.5 py-0.5 bg-white/90 backdrop-blur-xs border border-neutral-100/30 rounded-md text-[8px] font-black text-amber-800 uppercase">
@@ -2046,6 +2278,193 @@ export const StaffDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Quick Edit Product Modal */}
+      {dashboardEditingProduct && (
+        <div className="fixed inset-0 bg-neutral-900/60 backdrop-blur-sm z-55 flex items-center justify-center p-4">
+          <div className="bg-white border text-neutral-900 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl relative animate-in fade-in duration-200">
+            <button 
+              type="button"
+              onClick={() => setDashboardEditingProduct(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition"
+              title="Close modal"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2">
+              <Edit className="w-5 h-5 text-amber-950" />
+              <h3 className="font-black text-sm uppercase tracking-wider text-amber-950">Quick Edit Product</h3>
+            </div>
+
+            <form onSubmit={handleSaveDashProductEdit} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="font-extrabold text-[#78350F] text-[10px] uppercase">Product Name</label>
+                <input 
+                  type="text"
+                  required
+                  value={dashEditName}
+                  onChange={(e) => setDashEditName(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-extrabold text-[#78350F] text-[10px] uppercase">Price ($)</label>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={dashEditPrice}
+                    onChange={(e) => setDashEditPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-bold font-mono"
+                  />
+                </div>
+
+                <div className="space-y-2 flex flex-col justify-end">
+                  <label className="flex items-center gap-2 cursor-pointer select-none py-1">
+                    <input 
+                      type="checkbox"
+                      checked={dashEditAvailable}
+                      onChange={(e) => setDashEditAvailable(e.target.checked)}
+                      className="w-4 h-4 text-amber-950 border-neutral-300 rounded focus:ring-amber-950 accent-amber-950"
+                    />
+                    <span className="font-extrabold text-[#78350F] text-[10px] uppercase">Available</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-extrabold text-[#78350F] text-[10px] uppercase">Category</label>
+                  <select
+                    value={dashEditCategory}
+                    onChange={(e) => setDashEditCategory(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-bold"
+                  >
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-extrabold text-[#78350F] text-[10px] uppercase">Station</label>
+                  <select
+                    value={dashEditStation}
+                    onChange={(e) => setDashEditStation(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-bold"
+                  >
+                    <option value="station-kitchen">Kitchen</option>
+                    <option value="station-bar">Bar / Barista</option>
+                    <option value="station-dessert">Dessert Spot</option>
+                    <option value="station-juice">Juice Station</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-extrabold text-[#78350F] text-[10px] uppercase">Description</label>
+                <textarea 
+                  value={dashEditDescription}
+                  onChange={(e) => setDashEditDescription(e.target.value)}
+                  rows={2}
+                  className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-bold placeholder:font-normal"
+                  placeholder="Describe the main ingredients or station style notes..."
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => setDashboardEditingProduct(null)}
+                  className="flex-1 py-2.5 bg-neutral-100 hover:bg-neutral-200 font-extrabold rounded-xl text-neutral-600 transition cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-2.5 bg-amber-950 hover:bg-amber-900 font-extrabold rounded-xl text-white transition cursor-pointer text-xs flex items-center justify-center gap-1 uppercase"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Waiter Modal Overlay */}
+      {editingWaiterOrder && (
+        <div id="edit-waiter-modal" className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[60] flex items-center justify-center p-4 hover:cursor-default" onClick={() => setEditingWaiterOrder(null)}>
+          <div className="bg-white border border-neutral-200 text-stone-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl relative space-y-5" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setEditingWaiterOrder(null)}
+              className="absolute top-4 right-4 p-1 rounded-full text-stone-400 hover:text-stone-950 hover:bg-neutral-100 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-amber-50 border border-amber-250 rounded-2xl flex items-center justify-center text-amber-900">
+                <Edit className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[9px] text-amber-800 font-bold font-mono uppercase tracking-widest block">Operational Adjustments</span>
+                <h2 className="text-base font-black text-neutral-900 uppercase tracking-tight">
+                  Edit waiter
+                </h2>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Order: <span className="font-extrabold text-stone-850">{editingWaiterOrder.orderNumber}</span> • Table: <span className="font-extrabold text-stone-850">{editingWaiterOrder.tableName}</span>
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveWaiterEdit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">
+                  Select New Waiter
+                </label>
+                <select
+                  required
+                  value={selectedWaiterName}
+                  onChange={(e) => setSelectedWaiterName(e.target.value)}
+                  className="w-full bg-white border border-stone-300 rounded-xl p-2.5 text-xs font-bold outline-none text-stone-800 focus:ring-1 focus:ring-amber-950"
+                >
+                  <option value="">-- Choose Waiter --</option>
+                  <option value="Counter POS">Counter POS (None)</option>
+                  {users
+                    .filter(u => u.role === UserRole.WAITER && u.isActive)
+                    .map(w => (
+                      <option key={w.id} value={w.name}>
+                        {w.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingWaiterOrder(null)}
+                  className="flex-1 bg-stone-105 hover:bg-stone-200 text-stone-700 text-xs font-black py-2.5 rounded-xl transition cursor-pointer border border-stone-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-black py-2.5 rounded-xl transition shadow-xs cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };// WAITER POS ACCESS PERMISSIONS
@@ -2093,6 +2512,10 @@ const ROLE_PERMISSIONS = {
     canAccessCustomerQR: true,
   },
 };
+
+function showPage(page: string) {
+  console.log("Navigating to module page:", page);
+}
 
 function getPermissions(user) {
   return ROLE_PERMISSIONS[user?.role] || ROLE_PERMISSIONS.waiter;
@@ -2153,4 +2576,40 @@ function openMenuSelection(user) {
   }
 
   showPage("Menu Selection");
+}
+
+// WAITER IN-LINE ACCESS CONTROL BUTTON COMPONENT
+interface WaiterProtectedButtonProps {
+  role: string | UserRole;
+  feature: "create_order" | "mark_paid" | "delete_order";
+  onClick?: () => void;
+  children: React.ReactNode;
+}
+
+export const WaiterProtectedButton: React.FC<WaiterProtectedButtonProps> = ({
+  role,
+  feature,
+  onClick,
+  children
+}) => {
+  const isWaiter = String(role).toLowerCase() === "waiter";
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (isWaiter && (feature === "mark_paid" || feature === "delete_order")) {
+      const act = feature === "mark_paid" ? "settle payment or mark orders as paid" : "delete orders";
+      alert(`Waiters are not allowed to ${act}.`);
+      return;
+    }
+    if (onClick) onClick();
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider bg-amber-900 border border-amber-850 rounded-lg hover:bg-amber-850 hover:text-white transition active:scale-95 text-amber-300"
+    >
+      {children}
+    </button>
+  );
 }
