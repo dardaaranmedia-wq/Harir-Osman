@@ -3,8 +3,6 @@ export enum UserRole {
   MANAGER = "Manager",
   CASHIER = "Cashier",
   WAITER = "Waiter",
-  KITCHEN = "Kitchen Staff",
-  BARISTA = "Barista",
 }
 
 export interface User {
@@ -141,6 +139,7 @@ export interface SystemSettings {
   serviceChargePercentage?: number; // E.g. 10%
   logoUrl?: string;
   printerPaperWidth: "80mm" | "58mm";
+  allowWaiterEdit?: boolean;
 }
 
 export function getSomaliaToday(): string {

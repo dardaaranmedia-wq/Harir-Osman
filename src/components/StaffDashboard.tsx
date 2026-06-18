@@ -20,27 +20,13 @@ export const StaffDashboard: React.FC = () => {
   // Screen modes: "order" (Create Order) or "queue" (Order Queue manager)
   const [activeScreen, setActiveScreen] = useState<"order" | "queue">("order");
   
-  const isUserWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
-
   // Dashboard Order Queue Tab (1 = New, 2 = Served, 3 = Paid, 4 = QR Pending)
-  const [queueTab, setQueueTab] = useState<OrderStatus | "Pending">(isUserWaiter ? OrderStatus.NEW : "Pending");
+  const [queueTab, setQueueTab] = useState<OrderStatus | "Pending">("Pending");
 
   // Selection states inside "Create Order" mode
   const [selectedTable, setSelectedTable] = useState<string>("LUNA-T01");
   const [orderCustomerType, setOrderCustomerType] = useState<"Dine-In" | "Takeaway">("Dine-In");
-  const [assignedWaiterName, setAssignedWaiterName] = useState<string>(isUserWaiter ? (currentUser?.name || "") : "");
-
-  // Sync queueTab and assignedWaiterName when currentUser changes or logs in
-  React.useEffect(() => {
-    const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
-    if (isWaiter) {
-      setQueueTab(OrderStatus.NEW);
-      setAssignedWaiterName(currentUser?.name || "");
-    } else {
-      setQueueTab("Pending");
-      setAssignedWaiterName("");
-    }
-  }, [currentUser]);
+  const [assignedWaiterName, setAssignedWaiterName] = useState<string>("");
   const [tableSearch, setTableSearch] = useState<string>("");
   const [orderCategory, setOrderCategory] = useState<string>("all");
   const [productSearch, setProductSearch] = useState<string>("");
@@ -182,11 +168,10 @@ export const StaffDashboard: React.FC = () => {
     );
 
     // Reset Tray
-    const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
     setTrayItems([]);
     setTrayNotes({});
     setGeneralTrayComment("");
-    setAssignedWaiterName(isWaiter ? (currentUser?.name || "") : "");
+    setAssignedWaiterName("");
     setOrderCustomerType("Dine-In");
     
     // Switch to queue
@@ -209,29 +194,29 @@ export const StaffDashboard: React.FC = () => {
     }
   };
 
-  // Filter orders by active queue tab selection
-  const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
-  const visibleOrders = orders.filter(o => {
-    if (!isWaiter) return true;
+  const [queueSearchQuery, setQueueSearchQuery] = useState("");
+  const [postSaveOrder, setPostSaveOrder] = useState<Order | null>(null);
+
+  // Filter orders by active queue tab selection and queueSearchQuery
+  const filteredOrders = orders.filter(o => {
+    if (!orderMatchesDate(o)) return false;
     
-    // For a waiter, they should only see their own orders for NEW, SERVED, and PAID status.
-    const status = o.status;
-    if (status === OrderStatus.NEW || status === OrderStatus.SERVED || status === OrderStatus.PAID) {
-      const waiterMatch = (o.waiterName || "").toLowerCase().trim() === (currentUser?.name || "").toLowerCase().trim() ||
-                          (o.waiterName || "").toLowerCase().trim().includes((currentUser?.name || "").toLowerCase().replace("waiter", "").trim()) ||
-                          (currentUser?.name || "").toLowerCase().trim().includes((o.waiterName || "").toLowerCase().replace("waiter", "").trim());
-      return waiterMatch;
+    // Tab 4 is Customer self order Pending QR
+    const matchesTab = queueTab === "Pending" ? o.status === OrderStatus.PENDING_QR : o.status === queueTab;
+    if (!matchesTab) return false;
+
+    if (queueSearchQuery.trim()) {
+      const q = queueSearchQuery.toLowerCase();
+      return (
+        o.orderNumber?.toLowerCase().includes(q) ||
+        o.tableName?.toLowerCase().includes(q) ||
+        o.tableId?.toLowerCase().includes(q) ||
+        o.waiterName?.toLowerCase().includes(q) ||
+        (o.customerNotes && o.customerNotes.toLowerCase().includes(q)) ||
+        o.items.some(item => item.name.toLowerCase().includes(q))
+      );
     }
     return true;
-  });
-
-  const filteredOrders = visibleOrders.filter(o => {
-    if (!orderMatchesDate(o)) return false;
-    // Tab 4 is Customer self order Pending QR
-    if (queueTab === "Pending") {
-      return o.status === OrderStatus.PENDING_QR;
-    }
-    return o.status === queueTab;
   });
 
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -370,20 +355,39 @@ export const StaffDashboard: React.FC = () => {
   const saveEditedOrder = () => {
     if (!editingOrder) return;
     
+    const subtotal = editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0);
+    const vatRate = editingOrder.vatRate ?? (settings.vatPercentage / 100);
+    const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
+    const discount = editingOrder.discountAmount || 0;
+    const serviceChg = editingOrder.serviceCharge || 0;
+    const grandTotal = parseFloat((subtotal + vatAmount + serviceChg - discount).toFixed(2));
+
+    const updatedOrder: Order = {
+      ...editingOrder,
+      subtotal,
+      vatRate,
+      vatAmount,
+      grandTotal,
+    };
+
     // Update local context with detailed auditing trace
     updateOrderWithAuditTrail(
       editingOrder.id,
       editingOrder.items,
       currentUser?.name || "Staff Cashier",
       currentUser?.role || "Cashier",
-      0, // discount
-      0, // service charge
-      editReason ? editReason.trim() : "Items/Quantities adjusted prior approval",
-      editingOrder.customerNotes
+      discount, // discount
+      serviceChg, // service charge
+      editReason ? editReason.trim() : "Items/Quantities adjusted",
+      editingOrder.customerNotes,
+      editingOrder.waiterName,
+      editingOrder.tableId,
+      editingOrder.tableName
     );
     
     setEditingOrder(null);
     setEditReason("");
+    setPostSaveOrder(updatedOrder);
   };
 
   const markOrderPaid = (orderId?: string) => {
@@ -484,9 +488,9 @@ export const StaffDashboard: React.FC = () => {
           >
             <Layers className="w-4 h-4" />
             Order Queue Manager
-            {visibleOrders.some(o => o.status === OrderStatus.PENDING_QR) && (
+            {orders.some(o => o.status === OrderStatus.PENDING_QR) && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center animate-bounce">
-                {visibleOrders.filter(o => o.status === OrderStatus.PENDING_QR).length}
+                {orders.filter(o => o.status === OrderStatus.PENDING_QR).length}
               </span>
             )}
           </button>
@@ -564,7 +568,7 @@ export const StaffDashboard: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs uppercase tracking-widest text-stone-500 font-extrabold flex items-center gap-2">
                     <FileText className="w-4 h-4 text-stone-400" />
-                    Matching Orders ({visibleOrders.filter(o => 
+                    Matching Orders ({orders.filter(o => 
                       orderMatchesDate(o) && (
                         o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
                         o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
@@ -577,7 +581,7 @@ export const StaffDashboard: React.FC = () => {
                   </h3>
                 </div>
 
-                {visibleOrders.filter(o => 
+                {orders.filter(o => 
                   orderMatchesDate(o) && (
                     o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
                     o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
@@ -592,7 +596,7 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {visibleOrders.filter(o => 
+                    {orders.filter(o => 
                       orderMatchesDate(o) && (
                         o.orderNumber?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
                         o.tableName?.toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
@@ -684,6 +688,14 @@ export const StaffDashboard: React.FC = () => {
                               Barista Copy
                             </button>
                           </div>
+
+                          <button
+                            onClick={() => startEditingPending(order)}
+                            className="w-full bg-white hover:bg-stone-50 border border-stone-250 text-stone-700 text-[10px] font-black py-2 rounded-lg transition shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            <Edit className="w-3.5 h-3.5 text-stone-500" />
+                            Edit Items / Details
+                          </button>
 
                           {order.status === OrderStatus.SERVED && currentUser?.role !== "Waiter" && (
                             <button
@@ -990,7 +1002,7 @@ export const StaffDashboard: React.FC = () => {
                 )}
 
                 {/* Optional Waiter Assign option */}
-                {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
+                {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER || currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter") && (
                   <div className="space-y-1">
                     <h3 className="text-xs uppercase tracking-widest font-black text-neutral-500">
                       Assign Waiter
@@ -1151,22 +1163,20 @@ export const StaffDashboard: React.FC = () => {
               <div className="flex gap-2">
                 
                 {/* Tab 4: QR self-orders Pending (Orange) */}
-                {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (
-                  <button 
-                    onClick={() => setQueueTab("Pending")}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
-                      queueTab === "Pending" 
-                        ? "bg-amber-500 text-black border-amber-500 shadow-sm" 
-                        : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100/50"
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
-                    Pending QR Orders
-                    <span className="ml-1 bg-white border border-amber-300 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                      {visibleOrders.filter(o => o.status === OrderStatus.PENDING_QR && orderMatchesDate(o)).length}
-                    </span>
-                  </button>
-                )}
+                <button 
+                  onClick={() => setQueueTab("Pending")}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                    queueTab === "Pending" 
+                      ? "bg-amber-500 text-black border-amber-500 shadow-sm" 
+                      : "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100/50"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
+                  Pending QR Orders
+                  <span className="ml-1 bg-white border border-amber-300 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                    {orders.filter(o => o.status === OrderStatus.PENDING_QR && orderMatchesDate(o)).length}
+                  </span>
+                </button>
 
                 {/* Tab 1: New order list confirmed (Blue) */}
                 <button 
@@ -1180,7 +1190,7 @@ export const StaffDashboard: React.FC = () => {
                   <span className="w-2.5 h-2.5 bg-blue-500 rounded-full" />
                   New Orders
                   <span className="ml-1 bg-white border border-blue-300 text-blue-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {visibleOrders.filter(o => o.status === OrderStatus.NEW && orderMatchesDate(o)).length}
+                    {orders.filter(o => o.status === OrderStatus.NEW && orderMatchesDate(o)).length}
                   </span>
                 </button>
 
@@ -1196,7 +1206,7 @@ export const StaffDashboard: React.FC = () => {
                   <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping-slow" />
                   Served to Table
                   <span className="ml-1 bg-white border border-emerald-305 text-emerald-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {visibleOrders.filter(o => o.status === OrderStatus.SERVED && orderMatchesDate(o)).length}
+                    {orders.filter(o => o.status === OrderStatus.SERVED && orderMatchesDate(o)).length}
                   </span>
                 </button>
 
@@ -1212,27 +1222,25 @@ export const StaffDashboard: React.FC = () => {
                   <span className="w-2.5 h-2.5 bg-neutral-400 rounded-full" />
                   Paid History
                   <span className="ml-1 bg-white border border-neutral-300 text-neutral-600 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                    {visibleOrders.filter(o => o.status === OrderStatus.PAID && orderMatchesDate(o)).length}
+                    {orders.filter(o => o.status === OrderStatus.PAID && orderMatchesDate(o)).length}
                   </span>
                 </button>
 
                 {/* Tab 5: Cancelled Orders (Red) */}
-                {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (
-                  <button 
-                    onClick={() => setQueueTab(OrderStatus.CANCELLED)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
-                      queueTab === OrderStatus.CANCELLED 
-                        ? "bg-red-650 text-white border-red-600 shadow-xs" 
-                        : "bg-red-50 text-red-700 border-red-100 hover:bg-red-100/50"
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 bg-red-500 rounded-full" />
-                    Cancelled Orders
-                    <span className="ml-1 bg-white border border-red-300 text-red-700 text-[10px] font-black px-1.5 py-0.5 rounded-md">
-                      {visibleOrders.filter(o => o.status === OrderStatus.CANCELLED && orderMatchesDate(o)).length}
-                    </span>
-                  </button>
-                )}
+                <button 
+                  onClick={() => setQueueTab(OrderStatus.CANCELLED)}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                    queueTab === OrderStatus.CANCELLED 
+                      ? "bg-red-650 text-white border-red-600 shadow-xs" 
+                      : "bg-red-50 text-red-700 border-red-100 hover:bg-red-100/50"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full" />
+                  Cancelled Orders
+                  <span className="ml-1 bg-white border border-red-300 text-red-700 text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                    {orders.filter(o => o.status === OrderStatus.CANCELLED && orderMatchesDate(o)).length}
+                  </span>
+                </button>
 
               </div>
               
@@ -1319,11 +1327,6 @@ export const StaffDashboard: React.FC = () => {
                                 <td className="py-1">
                                   <div className="font-semibold text-neutral-800 flex items-center gap-1">
                                     {item.name}
-                                    {item.isDrink ? (
-                                      <span className="bg-amber-100 text-[9px] text-amber-800 font-black px-1 rounded">D</span>
-                                    ) : (
-                                      <span className="bg-emerald-100 text-[9px] text-emerald-800 font-black px-1 rounded">F</span>
-                                    )}
                                   </div>
                                   {item.notes && (
                                     <span className="text-[10px] italic text-amber-700 block mt-0.5 font-medium">* {item.notes}</span>
@@ -1492,24 +1495,22 @@ export const StaffDashboard: React.FC = () => {
                         {order.status === OrderStatus.PAID && (
                           /* History details display */
                           <div className="text-[10px] text-neutral-500 bg-neutral-50 p-2 rounded-lg space-y-0.5">
-                            <div>Checked out by Cashier: <b className="text-neutral-800">{order.cashierName || "Farhan"}</b></div>
+                            <div>Checked out by Cashier: <b className="text-neutral-800">{order.cashierName || "Siti"}</b></div>
                             <div>Paid Category: <b className="text-neutral-800">{order.paymentMethod || "Cash"}</b></div>
                             <div>Checkout Time: <b className="text-neutral-800">{new Date(order.updatedAt).toLocaleTimeString()}</b></div>
-                            <div className={`grid gap-2 mt-2 ${currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter" ? "grid-cols-1" : "grid-cols-2"}`}>
+                            <div className="grid grid-cols-2 gap-2 mt-2">
                               <button 
                                 onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
-                                className="text-blue-600 hover:underline hover:bg-blue-50/50 block py-1.5 rounded font-extrabold text-center uppercase border border-blue-100 text-[10px] w-full"
+                                className="text-blue-600 hover:underline hover:bg-blue-50/50 block py-1.5 rounded font-extrabold text-center uppercase border border-blue-100 text-[10px]"
                               >
                                 Reprint Bill
                               </button>
-                              {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" && (
-                                <button 
-                                  onClick={() => startEditingPending(order)}
-                                  className="text-neutral-600 hover:bg-neutral-105 block py-1.5 rounded font-extrabold text-center uppercase border border-neutral-250 text-[10px]"
-                                >
-                                  Edit Items
-                                </button>
-                              )}
+                              <button 
+                                onClick={() => startEditingPending(order)}
+                                className="text-neutral-600 hover:bg-neutral-105 block py-1.5 rounded font-extrabold text-center uppercase border border-neutral-250 text-[10px]"
+                              >
+                                Edit Items
+                              </button>
                             </div>
                             {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
                               <button 
@@ -1822,9 +1823,17 @@ export const StaffDashboard: React.FC = () => {
       )}
 
       {/* Editing dialog modal (For cashiers to customize Pending QR Orders prior approval) */}
-      {editingOrder && (
-        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-2 md:p-4">
-          <div className="bg-white rounded-3xl shadow-2xl relative w-full max-w-5xl max-h-[95vh] md:max-h-[90vh] flex flex-col overflow-hidden">
+      {editingOrder && (() => {
+        const isReadOnly = editingOrder.status === OrderStatus.PAID || ((currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter") && !settings.allowWaiterEdit);
+        const subtotal = editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0);
+        const vatRate = editingOrder.vatRate ?? (settings.vatPercentage / 100);
+        const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
+        const discount = editingOrder.discountAmount || 0;
+        const serviceChg = editingOrder.serviceCharge || 0;
+        const grandTotal = parseFloat((subtotal + vatAmount + serviceChg - discount).toFixed(2));
+        return (
+          <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-2 md:p-4">
+            <div className="bg-white rounded-3xl shadow-2xl relative w-full max-w-5xl max-h-[95vh] md:max-h-[90vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="p-4 md:p-5 border-b border-neutral-100 flex items-center justify-between shrink-0 bg-neutral-50/50">
@@ -1860,10 +1869,18 @@ export const StaffDashboard: React.FC = () => {
               
               {/* Left Column: Current Order Items, Chef Notes, Change Reason & Save Actions */}
               <div className="w-full md:w-[42%] border-b md:border-b-0 md:border-r border-neutral-100 p-4 md:p-5 flex flex-col overflow-hidden justify-between bg-white min-h-0">
-                <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+                  
+                  {/* Notice for Waitstaff if editing disabled */}
+                  {(currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter") && !settings.allowWaiterEdit && (
+                    <div className="bg-amber-50 border border-amber-200/50 rounded-xl p-3 text-[10.5px] text-amber-900 font-medium leading-normal">
+                      ⚠️ <b>Waiter Editing Restricted</b>: Pre-payment order editing must be toggled on in Cafe Settings by an Admin/Manager for you to modify active lists. Opened as read-only.
+                    </div>
+                  )}
+
                   <div>
                     <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1.5">
-                      Current Order List ({editingOrder.items.reduce((acc, current) => acc + current.quantity, 0)} items)
+                      Current Order List ({subtotal > 0 ? editingOrder.items.reduce((acc, current) => acc + current.quantity, 0) : 0} items)
                     </span>
                     {editingOrder.items.length === 0 ? (
                       <div className="bg-neutral-50 border border-dashed border-neutral-200/60 rounded-2xl p-6 text-center text-neutral-400">
@@ -1884,7 +1901,7 @@ export const StaffDashboard: React.FC = () => {
                             </div>
                             
                             <div className="flex items-center gap-1.5 shrink-0">
-                              {(!currentUser || (currentUser.role !== UserRole.WAITER && currentUser.role?.toLowerCase() !== "waiter")) && (
+                              {!isReadOnly && (
                                 <button 
                                   type="button"
                                   onClick={() => updateEditQty(it.productId, -1)}
@@ -1896,15 +1913,17 @@ export const StaffDashboard: React.FC = () => {
                               
                               <span className="text-xs font-black w-5 text-center select-none text-neutral-800">{it.quantity}</span>
                               
-                              <button 
-                                type="button"
-                                onClick={() => updateEditQty(it.productId, 1)}
-                                className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
-                              >
-                                <Plus className="w-3 h-3 text-neutral-600" />
-                              </button>
+                              {!isReadOnly && (
+                                <button 
+                                  type="button"
+                                  onClick={() => updateEditQty(it.productId, 1)}
+                                  className="w-7 h-7 rounded-full bg-white hover:bg-neutral-100 border border-neutral-250 flex items-center justify-center font-bold text-neutral-800 shadow-xs active:scale-90 transition cursor-pointer"
+                                >
+                                  <Plus className="w-3 h-3 text-neutral-600" />
+                                </button>
+                              )}
                               
-                              {(!currentUser || (currentUser.role !== UserRole.WAITER && currentUser.role?.toLowerCase() !== "waiter")) && (
+                              {!isReadOnly && (
                                 <button 
                                   type="button"
                                   onClick={() => updateEditQty(it.productId, -it.quantity)}
@@ -1921,28 +1940,144 @@ export const StaffDashboard: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Waiter Assign dropdown inside receipt modal */}
+                  <div>
+                    <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1.5">
+                      Waitstaff Assignment
+                    </span>
+                    {!isReadOnly ? (
+                      <div className="flex gap-2">
+                        <select
+                          value={users.some(u => u.name === editingOrder.waiterName && u.role === UserRole.WAITER) ? editingOrder.waiterName : (editingOrder.waiterName ? "__custom__" : "")}
+                          onChange={(e) => {
+                            if (e.target.value !== "__custom__") {
+                              setEditingOrder({ ...editingOrder, waiterName: e.target.value });
+                            } else {
+                              setEditingOrder({ ...editingOrder, waiterName: "New Waiter" });
+                            }
+                          }}
+                          className="flex-1 text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-bold text-neutral-800"
+                        >
+                          <option value="">Counter POS / None</option>
+                          {users
+                            .filter(u => u.role === UserRole.WAITER && u.isActive)
+                            .map(w => (
+                              <option key={w.id} value={w.name}>
+                                {w.name}
+                              </option>
+                            ))}
+                          <option value="__custom__">Custom Waiter Name...</option>
+                        </select>
+                        
+                        {(!users.some(u => u.name === editingOrder.waiterName && u.role === UserRole.WAITER) && editingOrder.waiterName) && (
+                          <input
+                            type="text"
+                            required
+                            placeholder="Type waiter name..."
+                            value={editingOrder.waiterName || ""}
+                            onChange={(e) => setEditingOrder({ ...editingOrder, waiterName: e.target.value })}
+                            className="flex-1 text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-bold text-neutral-800"
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-neutral-50 border p-3 rounded-xl text-xs flex justify-between items-center">
+                        <span className="text-neutral-505 font-bold">Assigned Waiter</span>
+                        <span className="font-extrabold text-neutral-800">{editingOrder.waiterName || "Counter POS"}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Table Assign dropdown inside receipt modal */}
+                  <div>
+                    <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1.5">
+                      Restaurant Table
+                    </span>
+                    {!isReadOnly ? (
+                      <select
+                        value={editingOrder.tableId || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const matchedTbl = tables.find(t => t.tableId === val);
+                          setEditingOrder({
+                            ...editingOrder,
+                            tableId: val,
+                            tableName: matchedTbl ? matchedTbl.name : "Takeaway"
+                          });
+                        }}
+                        className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-extrabold text-neutral-800"
+                      >
+                        <option value="">Takeaway / Virtual Counter POS</option>
+                        {tables.map(t => (
+                          <option key={t.tableId} value={t.tableId}>
+                            {t.name} ({t.tableId}) - {t.status.toUpperCase()}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="bg-neutral-50 border p-3 rounded-xl text-xs flex justify-between items-center">
+                        <span className="text-neutral-505 font-bold">Assigned Table</span>
+                        <span className="font-extrabold text-neutral-800">{editingOrder.tableName || "Takeaway Mode"}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Discount Modifier field */}
+                  <div>
+                    <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-1.5">
+                      Financial Discount
+                    </span>
+                    {!isReadOnly ? (
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-neutral-400 text-xs">$</span>
+                        <input 
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          placeholder="0.00"
+                          value={editingOrder.discountAmount || ""}
+                          onChange={(e) => {
+                            const val = Math.max(0, parseFloat(e.target.value) || 0);
+                            setEditingOrder({ ...editingOrder, discountAmount: val });
+                          }}
+                          className="w-full text-xs pl-7 pr-3 py-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none font-mono font-bold"
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-neutral-50 border p-3 rounded-xl text-xs flex justify-between items-center">
+                        <span className="text-neutral-505 font-bold">Discount Amount</span>
+                        <span className="font-extrabold text-red-600 font-mono">-${(editingOrder.discountAmount || 0).toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Pricing Overview Summary */}
                   {editingOrder.items.length > 0 && (
-                    <div className="bg-amber-50/40 border border-amber-900/5 rounded-xl p-3 space-y-1.5 text-xs text-neutral-600">
+                    <div className="bg-amber-50/45 border border-amber-900/5 rounded-2xl p-4 space-y-2 text-xs text-neutral-600 shadow-sm">
                       <div className="flex justify-between font-medium">
                         <span>Subtotal</span>
-                        <span className="font-extrabold text-neutral-800">
-                          ${editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0).toFixed(2)}
-                        </span>
+                        <span className="font-mono font-extrabold text-neutral-850">${subtotal.toFixed(2)}</span>
                       </div>
+                      {discount > 0 && (
+                        <div className="flex justify-between font-medium text-red-650">
+                          <span>Discount Added</span>
+                          <span className="font-mono font-extrabold">-${discount.toFixed(2)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between font-medium">
-                        <span>VAT (${((editingOrder.vatRate ?? settings.vatPercentage / 100) * 100).toFixed(0)}%)</span>
-                        <span className="font-extrabold text-neutral-800">
-                          ${(editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0) * (editingOrder.vatRate ?? settings.vatPercentage / 100)).toFixed(2)}
-                        </span>
+                        <span>VAT ({(vatRate * 100).toFixed(0)}%)</span>
+                        <span className="font-mono font-extrabold text-neutral-850">${vatAmount.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between border-t border-neutral-200/50 pt-2 text-xs font-black text-neutral-900 uppercase tracking-wide">
-                        <span>Estimated Total</span>
-                        <span className="text-amber-950 font-extrabold text-sm">
-                          ${(
-                            editingOrder.items.reduce((s, i) => s + i.price * i.quantity, 0) * 
-                            (1 + (editingOrder.vatRate ?? settings.vatPercentage / 100))
-                          ).toFixed(2)}
+                      {serviceChg > 0 && (
+                        <div className="flex justify-between font-medium">
+                          <span>Service Charge</span>
+                          <span className="font-mono font-extrabold text-neutral-850">${serviceChg.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t border-dashed border-neutral-200 pt-2.5 text-xs font-black text-neutral-950 uppercase tracking-wide">
+                        <span>Grand Total</span>
+                        <span className="font-mono text-amber-950 font-black text-base">
+                          ${grandTotal.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1956,49 +2091,119 @@ export const StaffDashboard: React.FC = () => {
                     <textarea 
                       value={editingOrder.customerNotes || ""}
                       onChange={(e) => setEditingOrder({ ...editingOrder, customerNotes: e.target.value })}
+                      disabled={isReadOnly}
                       rows={2}
-                      placeholder="e.g. Extra hot, milk on the side..."
-                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition"
+                      placeholder={isReadOnly ? "No instructions entered." : "e.g. Extra hot, milk on the side..."}
+                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition disabled:opacity-75 disabled:cursor-not-allowed font-medium"
                     />
                   </div>
 
                   {/* Reason for Editing (for Audit Logs) */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                      Reason for Editing
-                    </label>
-                    <input 
-                      type="text"
-                      value={editReason}
-                      onChange={(e) => setEditReason(e.target.value)}
-                      placeholder="e.g. Order changed, incorrect item..."
-                      className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition font-sans"
-                    />
-                  </div>
+                  {!isReadOnly && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                        Reason for Editing (Required for Audit Trail)
+                      </label>
+                      <input 
+                        type="text"
+                        required
+                        value={editReason}
+                        onChange={(e) => setEditReason(e.target.value)}
+                        placeholder="e.g. Order changed, incorrect item..."
+                        className="w-full text-xs p-2.5 bg-neutral-50 border border-neutral-200 focus:border-amber-950 focus:bg-white rounded-xl outline-none transition font-sans font-bold"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Left Pane Action Footer */}
-                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-neutral-100 shrink-0 mt-3 md:mt-2">
-                  <button 
-                    type="button"
-                    onClick={() => setEditingOrder(null)}
-                    className="py-2.5 bg-neutral-100 hover:bg-neutral-200 font-extrabold rounded-xl text-neutral-600 transition cursor-pointer text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={saveEditedOrder}
-                    disabled={editingOrder.items.length === 0}
-                    className="py-2.5 bg-amber-950 hover:bg-amber-900 font-extrabold rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer text-xs uppercase"
-                  >
-                    Save updates
-                  </button>
+                <div className="pt-4 border-t border-neutral-100 shrink-0 mt-3 md:mt-2 bg-white">
+                  {isReadOnly ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        type="button"
+                        onClick={() => { setPrintingOrder(editingOrder); setReceiptType("customer"); }}
+                        className="py-2.5 bg-neutral-150 hover:bg-neutral-205 font-extrabold rounded-xl text-neutral-700 flex items-center justify-center gap-1.5 transition cursor-pointer text-xs uppercase"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        Print Receipt
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setEditingOrder(null)}
+                        className="py-2.5 bg-neutral-900 hover:bg-neutral-850 font-extrabold rounded-xl text-white transition cursor-pointer text-xs uppercase"
+                      >
+                        Close View
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        type="button"
+                        onClick={() => setEditingOrder(null)}
+                        className="py-2.5 bg-neutral-100 hover:bg-neutral-200 font-extrabold rounded-xl text-neutral-600 transition cursor-pointer text-xs text-center uppercase"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={saveEditedOrder}
+                        disabled={editingOrder.items.length === 0}
+                        className="py-2.5 bg-amber-950 hover:bg-amber-905 font-extrabold rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer text-xs uppercase"
+                      >
+                        Save updates
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Right Column: Dynamic Visual Product Menu Picker */}
               <div className="flex-1 bg-neutral-50 p-4 md:p-5 flex flex-col overflow-hidden min-h-0">
+                {isReadOnly ? (
+                  <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                    <div className="shrink-0 mb-4 bg-white border border-neutral-100 p-4 rounded-2xl shadow-2xs">
+                      <span className="text-[10px] text-amber-955 font-black uppercase tracking-widest block">Security logs</span>
+                      <h3 className="font-extrabold text-sm text-neutral-800 mt-1">Receipt Modification History</h3>
+                      <p className="text-[11px] text-neutral-400 leading-normal mt-0.5">Official audit trace recording table, staff, and item changes.</p>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin">
+                      {!editingOrder.auditHistory || editingOrder.auditHistory.length === 0 ? (
+                        <div className="bg-white border text-center p-8 rounded-2xl space-y-2.5 my-auto shadow-2xs">
+                          <span className="text-3xl block select-none">🛡️</span>
+                          <p className="text-xs font-black text-neutral-600 text-center">No edit history recorded</p>
+                          <p className="text-[10.5px] text-neutral-400 max-w-xs mx-auto leading-relaxed text-center">
+                            This bill reflects its pristine initial placement without pre-payment amendments.
+                          </p>
+                        </div>
+                      ) : (
+                        editingOrder.auditHistory.map((log, lidx) => (
+                          <div key={lidx} className="bg-white border rounded-2xl p-4 space-y-2 shadow-2xs hover:shadow-xs transition duration-150">
+                            <div className="flex justify-between items-start text-[10.5px]">
+                              <div>
+                                <span className="font-black text-neutral-900 block">{log.editedBy}</span>
+                                <span className="text-neutral-400 font-medium block mt-0.5">{log.userRole.toUpperCase()} • {new Date(log.editedAt).toLocaleString()}</span>
+                              </div>
+                              <span className="px-2 py-0.5 bg-neutral-100 rounded text-neutral-800 font-black font-mono">
+                                ${log.newTotal.toFixed(2)}
+                              </span>
+                            </div>
+                            <p className="text-[12px] font-bold text-stone-750 font-sans border-t border-neutral-100 pt-2 leading-relaxed">
+                              "{log.reason}"
+                            </p>
+                            <div className="text-[10px] text-neutral-500 bg-neutral-50 p-2.5 rounded-xl space-y-1">
+                              <div>• {log.changesSummary}</div>
+                              {log.addedItemsSummary && <div className="text-emerald-700 font-bold">• Added: {log.addedItemsSummary}</div>}
+                              {log.removedItemsSummary && <div className="text-red-700 font-medium">• Removed: {log.removedItemsSummary}</div>}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
                 
                 {/* Search Bar & Categories Tabs */}
                 <div className="shrink-0 space-y-3 mb-4">
@@ -2147,11 +2352,84 @@ export const StaffDashboard: React.FC = () => {
                       </div>
                   )}
                 </div>
-
+                </>
+              )}
               </div>
 
             </div>
 
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* Post-Save Order Wizard Modal */}
+      {postSaveOrder && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-55 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl border border-neutral-100 max-w-md w-full space-y-5 text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-450 to-[#E5C158]" />
+            <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-xl font-black">
+              ✓
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-black text-neutral-900 text-base">Receipt Updated Safely!</h3>
+              <p className="text-xs text-neutral-400 max-w-xs mx-auto">
+                All changes to order <span className="font-extrabold text-neutral-800">{postSaveOrder.orderNumber}</span> have been logged and computed. What would you like to do next?
+              </p>
+            </div>
+
+            <div className="bg-neutral-50 p-4 rounded-2xl flex flex-col space-y-1.5 text-xs text-neutral-600 text-left">
+              <div className="flex justify-between">
+                <span>Waiter / Staff</span>
+                <span className="font-extrabold text-neutral-800">{postSaveOrder.waiterName || "Counter POS"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Table / Seat</span>
+                <span className="font-extrabold text-neutral-800">{postSaveOrder.tableName || "Takeaway"}</span>
+              </div>
+              <div className="flex justify-between border-t border-neutral-250/50 pt-2 font-black text-neutral-900 uppercase">
+                <span>New Grand Total</span>
+                <span className="text-amber-950 font-bold font-mono">${postSaveOrder.grandTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button 
+                onClick={() => {
+                  setPrintingOrder(postSaveOrder);
+                  setReceiptType("customer");
+                }}
+                className="w-full py-2.5 bg-amber-950 hover:bg-amber-900 text-white text-xs font-black rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                Print Updated Bill / Invoice
+              </button>
+              
+              {currentUser?.role !== UserRole.WAITER && currentUser?.role?.toLowerCase() !== "waiter" ? (
+                <button 
+                  onClick={() => {
+                    const orderToSettle = postSaveOrder;
+                    setPostSaveOrder(null);
+                    handleOpenCheckout(orderToSettle);
+                  }}
+                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer uppercase"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Proceed to Settle Payment
+                </button>
+              ) : (
+                <div className="p-2 border border-dashed border-amber-200/50 bg-amber-50 rounded-xl text-[10px] text-amber-900 leading-normal font-medium text-center">
+                  ⚠️ Waitstaff Role: Settle Payment locked. Please handover table to Cashier to settle payment.
+                </div>
+              )}
+
+              <button 
+                onClick={() => setPostSaveOrder(null)}
+                className="w-full py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-extrabold rounded-xl transition cursor-pointer uppercase"
+              >
+                Close & Return
+              </button>
+            </div>
           </div>
         </div>
       )}

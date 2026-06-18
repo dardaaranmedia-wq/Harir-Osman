@@ -9,7 +9,6 @@ import { UserRole } from "./types";
 import { RoleLoginView } from "./components/RoleLoginView";
 import { StaffDashboard } from "./components/StaffDashboard";
 import { AdminPanel } from "./components/AdminPanel";
-import { KitchenDashboard } from "./components/KitchenDashboard";
 import { CustomerOrderView } from "./components/CustomerOrderView";
 import { 
   Coffee, ShieldCheck, Flame, Layers, Monitor, Sparkles, Bell, 
@@ -21,7 +20,7 @@ function AppContent() {
   const { currentUser, logout, loginPin, loginAdmin, notifications, markNotificationsAsRead, clearNotifications } = usePOS();
   
   // Simulated views for checking separate roles
-  const [simulatorView, setSimulatorView] = useState<"pos" | "admin" | "kitchen" | "barista" | "customer">("pos");
+  const [simulatorView, setSimulatorView] = useState<"pos" | "admin" | "customer">("pos");
   const [selectedSimTable, setSelectedSimTable] = useState<string>("LUNA-T03");
   const [notifBoxOpen, setNotifBoxOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -32,11 +31,7 @@ function AppContent() {
   // Automatically adjust perspective view upon login to match employee workspace role!
   useEffect(() => {
     if (currentUser) {
-      if (currentUser.role === UserRole.KITCHEN) {
-        setSimulatorView("kitchen");
-      } else if (currentUser.role === UserRole.BARISTA) {
-        setSimulatorView("barista");
-      } else if (currentUser.role === UserRole.DEVELOPER) {
+      if (currentUser.role === UserRole.DEVELOPER) {
         setSimulatorView("admin");
       } else if (
         currentUser.role === UserRole.WAITER || 
@@ -57,19 +52,15 @@ function AppContent() {
   }, []);
 
   // Sync state or force specific login roles if clicking simulator tags
-  const triggerSimRoleSwitch = (target: "pos" | "admin" | "kitchen" | "barista" | "customer") => {
+  const triggerSimRoleSwitch = (target: "pos" | "admin" | "customer") => {
     logout(); // Clear session
     setSimulatorView(target);
     
     // Automatically pre-authenticate corresponding test role to make testing seamless and awesome!
     if (target === "pos") {
-      loginPin("5678"); // Log in Farhan
+      loginPin("5678"); // Log in Adrian Cashier
     } else if (target === "admin") {
-      loginAdmin("harirosman25@gmail.com", "Harirdev12@@"); // Log in Hari Rosman
-    } else if (target === "kitchen") {
-      loginPin("1470"); // Log in Chef Zul
-    } else if (target === "barista") {
-      loginPin("2580"); // Log in Ken Barista
+      loginAdmin("harirosman25@gmail.com", "harir123098@@"); // Log in Hari Rosman
     }
   };
 
@@ -94,8 +85,6 @@ function AppContent() {
   const isManager = currentUser?.role === UserRole.MANAGER;
   const isCashier = currentUser?.role === UserRole.CASHIER;
   const isWaiter = currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter";
-  const isChef = currentUser?.role === UserRole.KITCHEN;
-  const isBrew = currentUser?.role === UserRole.BARISTA;
 
   // Unread notifications count
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -137,24 +126,7 @@ function AppContent() {
                     <ShieldCheck className="w-3.5 h-3.5" />
                     Admin Management
                   </button>
-                  <button 
-                    onClick={() => triggerSimRoleSwitch("kitchen")}
-                    className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
-                      simulatorView === "kitchen" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
-                    }`}
-                  >
-                    <Flame className="w-3.5 h-3.5" />
-                    Kitchen Cooks Queue
-                  </button>
-                  <button 
-                    onClick={() => triggerSimRoleSwitch("barista")}
-                    className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
-                      simulatorView === "barista" ? "bg-amber-950 text-amber-400 ring-1 ring-amber-500/50" : "bg-neutral-900 text-stone-300 hover:text-white"
-                    }`}
-                  >
-                    <Coffee className="w-3.5 h-3.5" />
-                    Barista Cafe station
-                  </button>
+
                   <button 
                     onClick={() => { logout(); setSimulatorView("customer"); }}
                     className={`px-3 py-1.5 rounded-lg font-black transition flex items-center gap-1.5 ${
@@ -207,19 +179,9 @@ function AppContent() {
               <AdminPanel />
             )}
 
-            {simulatorView === "kitchen" && isChef && (
-              <KitchenDashboard />
-            )}
-
-            {simulatorView === "barista" && isBrew && (
-              <KitchenDashboard />
-            )}
-
             {/* Fallback boundary checks for inconsistent simulator/user settings */}
             {((simulatorView === "pos" && !isWaiter && !isCashier && !isManager) ||
-              (simulatorView === "admin" && !isDev) ||
-              (simulatorView === "kitchen" && !isChef) ||
-              (simulatorView === "barista" && !isBrew)) && (
+              (simulatorView === "admin" && !isDev)) && (
                 <div className="flex-1 flex flex-col justify-center items-center text-center p-12 bg-neutral-900 text-white font-sans">
                   <Flame className="w-12 h-12 text-amber-500 animate-bounce" />
                   <h3 className="font-extrabold text-white text-base mt-4">Security Access Lock</h3>

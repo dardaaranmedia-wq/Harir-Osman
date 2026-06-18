@@ -1,11 +1,35 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { 
   User, UserRole, Category, Product, Table, Order, OrderItem, 
   OrderStatus, Notification, SystemSettings, ProductionStation, OrderAuditLog 
 } from "../types";
 import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_PRODUCTS, getInitialTables, INITIAL_PRODUCTION_STATIONS } from "../data";
-import { db } from "../lib/firebase";
-import { collection, getDocs, setDoc, deleteDoc, doc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { db } from "../firebase";
+
+async function checkNewCodeVersion() {
+  try {
+    const res = await fetch("/index.html?cb=" + Date.now());
+    if (!res.ok) return;
+    const htmlText = await res.text();
+    
+    // Scan for production bundle file hash from index.html (e.g. src="/assets/index-B2z8fX91.js")
+    const match = htmlText.match(/src="(\/assets\/index-[a-zA-Z0-9_\-]+\.js)"/);
+    if (match && match[1]) {
+      const serverScriptPath = match[1];
+      const currentScripts = Array.from(document.querySelectorAll("script")).map(s => s.getAttribute("src"));
+      const isLoaded = currentScripts.some(src => src && src.includes(serverScriptPath));
+      
+      if (!isLoaded && currentScripts.some(src => src && src.includes("/assets/index-"))) {
+        console.log("Newer application build detected! Reloading to update POS version...", serverScriptPath);
+        window.location.reload();
+      }
+    }
+  } catch (err) {
+    console.warn("Version check failed: ", err);
+  }
+}
+
 
 interface POSContextType {
   currentUser: User | null;
@@ -59,7 +83,10 @@ interface POSContextType {
     discountAmount?: number,
     serviceCharge?: number,
     reason?: string,
-    customerNotes?: string
+    customerNotes?: string,
+    newWaiterName?: string,
+    newTableId?: string,
+    newTableName?: string
   ) => void;
   addNotification: (type: "KITCHEN" | "BARISTA" | "CASHIER" | "SYSTEM", title: string, message: string) => void;
   clearNotifications: () => void;
@@ -206,123 +233,6 @@ export function simulateSound(type: "kitchen" | "barista" | "cashier") {
   return;
 }
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {},
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
-const OFFICIAL_CATEGORY_IDS = INITIAL_CATEGORIES.map(c => c.id);
-const OFFICIAL_PRODUCT_IDS = INITIAL_PRODUCTS.map(p => p.id);
-
-const syncFirestoreMenu = async (
-  setCategories: React.Dispatch<React.SetStateAction<Category[]>>,
-  setProducts: React.Dispatch<React.SetStateAction<Product[]>>
-) => {
-  try {
-    console.log("Checking and synchronizing official menu with Firestore database...");
-    
-    // 1. Fetch Categories from Firestore
-    let fsCategories: any[] = [];
-    try {
-      const catSnapshot = await getDocs(collection(db, "categories"));
-      fsCategories = catSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (e) {
-      handleFirestoreError(e, OperationType.GET, "categories");
-    }
-
-    // 2. Fetch Products from Firestore
-    let fsProducts: any[] = [];
-    try {
-      const prodSnapshot = await getDocs(collection(db, "products"));
-      fsProducts = prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (e) {
-      handleFirestoreError(e, OperationType.GET, "products");
-    }
-
-    // 3. Keep only real menu items: Delete any non-official Categories
-    for (const cat of fsCategories) {
-      if (!OFFICIAL_CATEGORY_IDS.includes(cat.id)) {
-        console.log(`Deleting unauthorized demo category from Firestore: ${cat.name || cat.id}`);
-        try {
-          await deleteDoc(doc(db, "categories", cat.id));
-        } catch (e) {
-          handleFirestoreError(e, OperationType.DELETE, `categories/${cat.id}`);
-        }
-      }
-    }
-
-    // 4. Keep only real menu items: Delete any non-official Products
-    for (const prod of fsProducts) {
-      if (!OFFICIAL_PRODUCT_IDS.includes(prod.id)) {
-        console.log(`Deleting unauthorized demo product from Firestore: ${prod.name || prod.id}`);
-        try {
-          await deleteDoc(doc(db, "products", prod.id));
-        } catch (e) {
-          handleFirestoreError(e, OperationType.DELETE, `products/${prod.id}`);
-        }
-      }
-    }
-
-    // 5. Ensure all official Categories are written to Firestore as reference
-    for (const cat of INITIAL_CATEGORIES) {
-      try {
-        await setDoc(doc(db, "categories", cat.id), cat);
-      } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, `categories/${cat.id}`);
-      }
-    }
-
-    // 6. Ensure all official Products are written to Firestore as reference
-    for (const prod of INITIAL_PRODUCTS) {
-      try {
-        await setDoc(doc(db, "products", prod.id), prod);
-      } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, `products/${prod.id}`);
-      }
-    }
-
-    // 7. Force local states to strictly reflect INITIAL lists (guarantee real items only)
-    setCategories(INITIAL_CATEGORIES);
-    setProducts(INITIAL_PRODUCTS);
-    localStorage.setItem("luna_categories", JSON.stringify(INITIAL_CATEGORIES));
-    localStorage.setItem("luna_products", JSON.stringify(INITIAL_PRODUCTS));
-
-    console.log("Firestore menu synchronization completed successfully. Only real menu items preserved.");
-  } catch (err) {
-    console.error("Firestore sync bypassed or failed (check permissions/offline):", err);
-    // If permission_denied or other offline/un-auth issues arise, we still enforce local consistency
-    setCategories(INITIAL_CATEGORIES);
-    setProducts(INITIAL_PRODUCTS);
-    localStorage.setItem("luna_categories", JSON.stringify(INITIAL_CATEGORIES));
-    localStorage.setItem("luna_products", JSON.stringify(INITIAL_PRODUCTS));
-  }
-};
-
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load state from LocalStorage or seed defaults
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -330,21 +240,49 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return stored ? JSON.parse(stored) : null;
   });
 
-  const [users, setUsers] = useState<User[]>(() => {
-    const stored = localStorage.getItem("luna_users");
-    let loadedUsers: User[] = stored ? JSON.parse(stored) : INITIAL_USERS;
+  const isSyncingFromCloudRef = useRef<boolean>(false);
+  const lastSyncTimeRef = useRef<number>(0);
 
-    // Filter to keep ONLY the ones present in INITIAL_USERS (identified by unique ID)
-    const initialIds = INITIAL_USERS.map(u => u.id);
-    loadedUsers = loadedUsers.filter(u => initialIds.includes(u.id));
+  // Automatically check for new build version on mount
+  useEffect(() => {
+    checkNewCodeVersion();
+  }, []);
 
-    // Ensure all 6 INITIAL_USERS are present (if deleted or missing, re-add them)
-    INITIAL_USERS.forEach(initUser => {
-      if (!loadedUsers.some(u => u.id === initUser.id)) {
-        loadedUsers.push(initUser);
+  // Listen to Firestore real-time synchronization to update all devices instantly
+  useEffect(() => {
+    const docRef = doc(db, "pos_states", "luna_master");
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data();
+        if (cloudData && cloudData.updatedAt && cloudData.updatedAt > lastSyncTimeRef.current) {
+          isSyncingFromCloudRef.current = true;
+          lastSyncTimeRef.current = cloudData.updatedAt;
+
+          if (Array.isArray(cloudData.users)) setUsers(cloudData.users);
+          if (Array.isArray(cloudData.categories)) setCategories(cloudData.categories);
+          if (Array.isArray(cloudData.products)) setProducts(cloudData.products);
+          if (Array.isArray(cloudData.tables)) setTables(cloudData.tables);
+          if (Array.isArray(cloudData.orders)) setOrders(cloudData.orders);
+          if (Array.isArray(cloudData.productionStations)) setProductionStations(cloudData.productionStations);
+          if (cloudData.settings) setSettings(cloudData.settings);
+          if (Array.isArray(cloudData.notifications)) setNotifications(cloudData.notifications);
+
+          setTimeout(() => {
+            isSyncingFromCloudRef.current = false;
+          }, 100);
+        }
       }
+    }, (err) => {
+      console.warn("Firestore onSnapshot subscription warning: ", err);
     });
 
+    return () => unsubscribe();
+  }, []);
+
+
+  const [users, setUsers] = useState<User[]>(() => {
+    const stored = localStorage.getItem("luna_users");
+    const loadedUsers: User[] = stored ? JSON.parse(stored) : INITIAL_USERS;
     return loadedUsers.map(u => {
       if (u.id === "u-dev" && u.role === UserRole.DEVELOPER) {
         return { ...u, password: "Harirdev12@@" };
@@ -355,26 +293,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [categories, setCategories] = useState<Category[]>(() => {
     const stored = localStorage.getItem("luna_categories");
-    const parsed = stored ? JSON.parse(stored) : null;
-    if (!parsed || parsed.some((c: Category) => !OFFICIAL_CATEGORY_IDS.includes(c.id))) {
-      return INITIAL_CATEGORIES;
-    }
-    return parsed;
+    return stored ? JSON.parse(stored) : INITIAL_CATEGORIES;
   });
 
   const [products, setProducts] = useState<Product[]>(() => {
     const stored = localStorage.getItem("luna_products");
-    const parsed = stored ? JSON.parse(stored) : null;
-    const isRealProduct = (p: Product) => OFFICIAL_PRODUCT_IDS.includes(p.id);
-    if (!parsed || parsed.some((p: Product) => !isRealProduct(p)) || parsed.length === 0) {
-      return INITIAL_PRODUCTS;
-    }
-    return parsed.filter(isRealProduct);
+    return stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
   });
-
-  useEffect(() => {
-    syncFirestoreMenu(setCategories, setProducts);
-  }, []);
 
   const [tables, setTables] = useState<Table[]>(() => {
     const stored = localStorage.getItem("luna_tables");
@@ -413,6 +338,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       appreciationMessage: "We Look Forward To Serving You Again, Welcome Back",
       serviceChargePercentage: 0,
       printerPaperWidth: "80mm",
+      allowWaiterEdit: true,
     };
   });
 
@@ -428,10 +354,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [theme]);
 
   const updateOrderWaiter = (orderId: string, waiterName: string) => {
-    if (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter") {
-      console.warn("Waiters are not allowed to assign another waiter name.");
-      return;
-    }
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, waiterName } : o));
     setTables(prev => {
       const order = orders.find(o => o.id === orderId);
@@ -474,6 +396,39 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem("luna_settings", JSON.stringify(settings));
   }, [settings]);
+
+  // Debounce and push local state mutations to Firestore
+  useEffect(() => {
+    if (isSyncingFromCloudRef.current) return;
+
+    const timeoutId = setTimeout(() => {
+      const docRef = doc(db, "pos_states", "luna_master");
+      const writeTimestamp = Date.now();
+      lastSyncTimeRef.current = writeTimestamp;
+
+      // Strip out any undefined properties recursively to meet strict Firestore data rules
+      const cleanState = JSON.parse(
+        JSON.stringify({
+          users,
+          categories,
+          products,
+          tables,
+          orders,
+          productionStations,
+          settings,
+          notifications,
+          updatedAt: writeTimestamp
+        })
+      );
+
+      setDoc(docRef, cleanState).catch((err) => {
+        console.warn("Firestore save warning: ", err);
+      });
+    }, 1500); // 1.5 seconds debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [users, categories, products, tables, orders, productionStations, settings, notifications]);
+
 
   // Synchronize state across tabs (QR customer ordering sends orders, cashier updates state, etc.)
   useEffect(() => {
@@ -564,6 +519,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     if (user) {
+      checkNewCodeVersion();
       setCurrentUser(user);
       addNotification("SYSTEM", `Staff Login`, `${user.name} online as ${user.role}`);
       return user;
@@ -580,10 +536,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (u.password === pass || (u.id === "u-dev" && pass === "harir123098@@"))
     );
     if (user) {
+      checkNewCodeVersion();
       setCurrentUser(user);
       addNotification("SYSTEM", `Secure Admin Login`, `${user.name} online as ${user.role}`);
       return user;
     }
+
     return null;
   };
 
@@ -640,9 +598,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       grandTotal,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      waiterName: (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter")
-        ? (currentUser?.name || "Waiter")
-        : (waiter || currentUser?.name || (isQR ? "Customer (QR Code)" : "Self-Ordering")),
+      waiterName: waiter || currentUser?.name || (isQR ? "Customer (QR Code)" : "Self-Ordering"),
       customerNotes: notes,
       paymentStatus: "Unpaid",
       discountAmount: 0,
@@ -656,10 +612,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Update table status if it's not a takeaway order
     if (!isTakeaway) {
-      const finalWaiter = (currentUser?.role === UserRole.WAITER || currentUser?.role?.toLowerCase() === "waiter")
-        ? (currentUser?.name || "Waiter")
-        : (waiter || currentUser?.name || "");
-      setTables(prev => prev.map(t => t.tableId === tblId ? { ...t, status: "ordered", assignedWaiter: finalWaiter } : t));
+      setTables(prev => prev.map(t => t.tableId === tblId ? { ...t, status: "ordered", assignedWaiter: waiter || currentUser?.name || "" } : t));
     }
 
     if (isQR) {
@@ -1072,7 +1025,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     discountAmount?: number,
     serviceCharge?: number,
     reason?: string,
-    customerNotes?: string
+    customerNotes?: string,
+    newWaiterName?: string,
+    newTableId?: string,
+    newTableName?: string
   ) => {
     setOrders(prev => prev.map(o => {
       if (o.id === orderId) {
@@ -1144,7 +1100,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           balanceReturned,
           customerNotes: customerNotes !== undefined ? customerNotes : o.customerNotes,
           updatedAt: new Date().toISOString(),
-          auditHistory: [...(o.auditHistory || []), auditLog]
+          auditHistory: [...(o.auditHistory || []), auditLog],
+          waiterName: newWaiterName !== undefined ? newWaiterName : o.waiterName,
+          tableId: newTableId !== undefined ? newTableId : o.tableId,
+          tableName: newTableName !== undefined ? newTableName : o.tableName,
         };
       }
       return o;

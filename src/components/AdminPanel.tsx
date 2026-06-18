@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { LunaLogo } from "./LunaLogo";
 import { ReceiptView } from "./ReceiptPrinters";
-import { INITIAL_CATEGORIES, INITIAL_PRODUCTS } from "../data";
 
 export const AdminPanel: React.FC = () => {
   const { 
@@ -48,7 +47,7 @@ export const AdminPanel: React.FC = () => {
   const [editCatImage, setEditCatImage] = useState("");
 
   // Selected Category ID
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("cat-main");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("cat-breakfast");
   const [isAddingProductInline, setIsAddingProductInline] = useState(true);
   const [adminProductSearch, setAdminProductSearch] = useState("");
 
@@ -270,7 +269,7 @@ export const AdminPanel: React.FC = () => {
     
     const imgUrl = prodImage || `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400`;
 
-    const targetCatId = prodCategory || selectedCategoryId || categories[0]?.id || "cat-main";
+    const targetCatId = prodCategory || selectedCategoryId || categories[0]?.id || "cat-breakfast";
 
     addProduct({
       name: prodName,
@@ -701,216 +700,6 @@ export const AdminPanel: React.FC = () => {
               </div>
             </div>
 
-            {/* Daily Ledger Archive System */}
-            <div className="bg-stone-900 border border-stone-850 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-stone-800 gap-2">
-                <div>
-                  <h3 className="text-xs uppercase tracking-widest font-black text-[#E5C158] flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    Staff Activity Journals & Daily Ledger History
-                  </h3>
-                  <p className="text-[10px] text-stone-400 mt-0.5">Audit historical billing ledgers for waiters & cashiers across months and years.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-stone-400 uppercase font-black">Audit Date:</span>
-                  <input 
-                    type="date" 
-                    id="ledger-audit-date"
-                    className="bg-stone-950 text-white font-mono text-xs rounded border border-stone-800 px-2 py-1 focus:border-[#E5C158] outline-none"
-                    value={selectedLedgerDate}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if(val) setSelectedLedgerDate(val);
-                    }}
-                  />
-                </div>
-              </div>
-
-              {(() => {
-                const targetDate = selectedLedgerDate || new Date().toISOString().split('T')[0];
-                const dayOrders = orders.filter(o => o.createdAt.startsWith(targetDate));
-                
-                const grossSales = dayOrders
-                  .filter(o => o.status === OrderStatus.PAID)
-                  .reduce((sum, o) => sum + o.totalAmount, 0);
-
-                const countPaid = dayOrders.filter(o => o.status === OrderStatus.PAID).length;
-                const countServedUnpaid = dayOrders.filter(o => o.status === OrderStatus.SERVED).length;
-                const countPending = dayOrders.filter(o => o.status === OrderStatus.PENDING_QR).length;
-                const countCancelled = dayOrders.filter(o => o.status === OrderStatus.CANCELLED).length;
-                const countNew = dayOrders.filter(o => o.status === OrderStatus.NEW).length;
-
-                const waiterSales: { [waiterName: string]: { count: number; total: number } } = {};
-                const cashierSales: { [cashierName: string]: { count: number; total: number } } = {};
-
-                dayOrders.forEach(o => {
-                  const wName = o.waiterName || "Self-Service (QR)";
-                  if (!waiterSales[wName]) {
-                    waiterSales[wName] = { count: 0, total: 0 };
-                  }
-                  waiterSales[wName].count += 1;
-                  if (o.status === OrderStatus.PAID) {
-                    waiterSales[wName].total += o.totalAmount;
-                  }
-
-                  if (o.status === OrderStatus.PAID) {
-                    const cName = o.cashierName || "Farhan";
-                    if (!cashierSales[cName]) {
-                      cashierSales[cName] = { count: 0, total: 0 };
-                    }
-                    cashierSales[cName].count += 1;
-                    cashierSales[cName].total += o.totalAmount;
-                  }
-                });
-
-                return (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 font-sans">
-                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-850">
-                        <span className="text-[9px] text-[#E5C158] uppercase font-black tracking-wider block">Gross Sales</span>
-                        <span className="text-xs font-bold font-mono text-white">${grossSales.toFixed(2)}</span>
-                      </div>
-                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-850">
-                        <span className="text-[9px] text-emerald-400 uppercase font-black tracking-wider block">Paid/Settled</span>
-                        <span className="text-xs font-bold font-mono text-white">{countPaid} orders</span>
-                      </div>
-                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-850">
-                        <span className="text-[9px] text-amber-500 uppercase font-black tracking-wider block">Served Unpaid</span>
-                        <span className="text-xs font-bold font-mono text-white">{countServedUnpaid} orders</span>
-                      </div>
-                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-850">
-                        <span className="text-[9px] text-red-500 uppercase font-black tracking-wider block">Cancelled/Void</span>
-                        <span className="text-xs font-bold font-mono text-white">{countCancelled} orders</span>
-                      </div>
-                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-850 col-span-2 lg:col-span-1">
-                        <span className="text-[9px] text-stone-400 uppercase font-black tracking-wider block">WIP / Pending</span>
-                        <span className="text-xs font-bold font-mono text-white">{countNew + countPending} orders</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 font-sans">
-                      <div className="bg-stone-950 p-4 rounded-xl border border-stone-850 space-y-3">
-                        <h4 className="text-[10px] uppercase font-black text-stone-300 tracking-wider pb-1.5 border-b border-stone-900">
-                          Waiter Daily Journals
-                        </h4>
-                        {Object.keys(waiterSales).length === 0 ? (
-                          <p className="text-[10px] text-stone-500 italic py-2">No waiters logged activities for this date.</p>
-                        ) : (
-                          <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {Object.entries(waiterSales).map(([name, stats]) => (
-                              <div key={name} className="flex justify-between text-xs text-stone-300 pb-1.5 border-b border-stone-900/40 last:border-0 last:pb-0">
-                                <span className="font-extrabold">{name}</span>
-                                <span className="font-mono text-stone-400">
-                                  {stats.count} orders created | <span className="text-emerald-400 font-bold">${stats.total.toFixed(2)} settled value</span>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="bg-stone-950 p-4 rounded-xl border border-stone-850 space-y-3">
-                        <h4 className="text-[10px] uppercase font-black text-stone-300 tracking-wider pb-1.5 border-b border-stone-900">
-                          Cashier Settlement Journals
-                        </h4>
-                        {Object.keys(cashierSales).length === 0 ? (
-                          <p className="text-[10px] text-stone-500 italic py-2">No cashier log settlements for this date.</p>
-                        ) : (
-                          <div className="space-y-2 max-h-40 overflow-y-auto">
-                            {Object.entries(cashierSales).map(([name, stats]) => (
-                              <div key={name} className="flex justify-between text-xs text-stone-300 pb-1.5 border-b border-stone-900/40 last:border-0 last:pb-0">
-                                <span className="font-extrabold">{name}</span>
-                                <span className="font-mono text-stone-400">
-                                  {stats.count} checks cleared | <span className="text-emerald-400 font-black">${stats.total.toFixed(2)} collected</span>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* BILL EDITOR & LEDGER SEARCH */}
-                    <div className="bg-stone-950 p-5 rounded-2xl border border-stone-850 space-y-4 font-sans">
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-stone-900">
-                        <div>
-                          <h4 className="text-[11px] uppercase font-black text-[#E5C158] tracking-wider">
-                            Daily Bills Ledger & Auditing Terminal
-                          </h4>
-                          <p className="text-[10px] text-stone-500 font-medium">Browse, adjust pricing, modify item counts, and reprint past receipts.</p>
-                        </div>
-                        <span className="text-[9px] bg-stone-900 border border-stone-805 text-stone-300 px-2.5 py-1 rounded-md font-bold font-mono">
-                          {dayOrders.length} Completed Bills
-                        </span>
-                      </div>
-
-                      {dayOrders.length === 0 ? (
-                        <div className="text-center py-8 text-stone-600 text-xs font-bold uppercase tracking-wider">
-                          No transactions found on {selectedLedgerDate}
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs">
-                            <thead>
-                              <tr className="border-b border-stone-900 text-stone-400 font-extrabold uppercase text-[9px] tracking-wider">
-                                <th className="py-2.5">Order No</th>
-                                <th className="py-2.5">Table</th>
-                                <th className="py-2.5">Waiter</th>
-                                <th className="py-2.5">Status</th>
-                                <th className="py-2.5">Channel</th>
-                                <th className="py-2.5 text-right font-mono">Settle Amount</th>
-                                <th className="py-2.5 text-right">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-stone-900/60">
-                              {dayOrders.map(order => (
-                                <tr key={order.id} className="text-stone-300 hover:bg-stone-900/40 transition">
-                                  <td className="py-3 font-semibold font-mono text-white">{order.orderNumber}</td>
-                                  <td className="py-3 font-extrabold text-amber-400 uppercase">{order.tableName}</td>
-                                  <td className="py-3 text-stone-400 font-medium">{order.waiterName || "Self-QR"}</td>
-                                  <td className="py-3 font-bold">
-                                    <span className={`px-2 py-0.5 rounded text-[9px] uppercase tracking-wide font-black ${
-                                      order.status === "Paid" || order.paymentStatus === "Paid" 
-                                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-950"
-                                        : "bg-amber-500/10 text-amber-500 border border-amber-950"
-                                    }`}>
-                                      {order.status}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 font-mono text-[10px] text-stone-400">{order.paymentMethod || "Cache"}</td>
-                                  <td className="py-3 text-right font-bold font-mono text-white">${(order.grandTotal ?? order.totalAmount ?? 0).toFixed(2)}</td>
-                                  <td className="py-3 text-right">
-                                    <div className="flex justify-end gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleInitiateEditBill(order)}
-                                        className="px-2.5 py-1 text-[10px] font-bold bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 rounded-lg transition-all transform active:scale-95 cursor-pointer flex items-center gap-1"
-                                      >
-                                        <Edit className="w-3 h-3" />
-                                        Audit/Edit
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setPrintingOrder(order)}
-                                        className="px-2.5 py-1 text-[10px] bg-stone-900 text-stone-300 hover:text-white rounded-lg border border-stone-800 transition cursor-pointer flex items-center gap-1"
-                                      >
-                                        <Printer className="w-3 h-3" />
-                                        Print
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
           </div>
         )}
 
@@ -952,12 +741,20 @@ export const AdminPanel: React.FC = () => {
                   <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                   Delete All Products
                 </button>
-                 <button
+                <button
                   type="button"
                   onClick={() => {
+                    const customCats: Category[] = [
+                      { id: "cat-steep", name: "Artisanal Brews", icon: "Coffee" },
+                      { id: "cat-bakers", name: "Artisanal Bakes", icon: "Cake" },
+                    ];
+                    const customProds: Product[] = [
+                      { id: "prod-matcha", name: "Ceremonial Kyoto Matcha", categoryId: "cat-steep", price: 5.8, available: true, isDrink: true, image: "https://images.unsplash.com/photo-1536256263959-770b48d82b0a?auto=format&fit=crop&q=80&w=400" },
+                      { id: "prod-pastry", name: "Fresh Butter Croissant Duo", categoryId: "cat-bakers", price: 4.5, available: true, isDrink: false, image: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=400" },
+                    ];
                     if (confirm("Do you want to import a newly designed custom menu? This will replace your catalog.")) {
-                      importNewMenu(INITIAL_CATEGORIES, INITIAL_PRODUCTS);
-                      setSelectedCategoryId("cat-main");
+                      importNewMenu(customCats, customProds);
+                      setSelectedCategoryId("cat-steep");
                     }
                   }}
                   className="px-3 py-1.5 bg-stone-900 hover:bg-stone-850 border border-stone-850 rounded-xl text-stone-250 hover:text-[#E5C158] font-bold text-[10px] uppercase transition cursor-pointer flex items-center gap-1.5"
@@ -984,7 +781,7 @@ export const AdminPanel: React.FC = () => {
                   onClick={() => {
                     if (confirm("Reset to factory Luna Café standard default menus?")) {
                       reseedDefaultMenu();
-                      setSelectedCategoryId("cat-main");
+                      setSelectedCategoryId("cat-breakfast");
                     }
                   }}
                   className="px-3 py-1.5 bg-[#E5C158] hover:bg-amber-450 rounded-xl text-stone-950 font-black text-[10px] uppercase transition cursor-pointer flex items-center gap-1.5"
@@ -1412,23 +1209,72 @@ export const AdminPanel: React.FC = () => {
              ============================================== */
           <div className="flex-1 overflow-hidden flex gap-6">
             
-            {/* Locked Registry Notice */}
-            <div className="w-80 bg-stone-900 border border-stone-850 p-6 rounded-3xl h-fit space-y-5 shrink-0 text-center flex flex-col items-center">
-              <div className="w-12 h-12 rounded-full bg-amber-950/20 border border-amber-900/40 flex items-center justify-center text-[#E5C158] animate-pulse">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="font-extrabold text-sm text-[#E5C158] uppercase tracking-wider">
-                  Registry State: Locked
-                </h3>
-                <p className="text-stone-400 text-[11px] leading-relaxed">
-                  The active system staff credentials directory is synchronized with the restaurant's official registry. Manual creation of new employee files is strictly restricted.
-                </p>
-              </div>
-              <div className="w-full pt-4 border-t border-stone-800/85 flex items-center justify-center gap-2 text-[10px] uppercase font-black text-stone-500 tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                Enrollment Locked
-              </div>
+            {/* Adding user form */}
+            <div className="w-80 bg-stone-900 border border-stone-850 p-5 rounded-3xl h-fit space-y-4 shrink-0">
+              <h3 className="font-black text-xs text-[#E5C158] uppercase tracking-widest pb-1 border-b border-stone-800">
+                Enroll Shift Employee
+              </h3>
+
+              <form onSubmit={handleAddUser} className="space-y-3.5 text-xs">
+                <div className="space-y-1">
+                  <label className="font-bold text-stone-400 uppercase tracking-wider block">Employee Name</label>
+                  <input 
+                    type="text" required placeholder="E.g. Siti Nur"
+                    value={newUserName} onChange={(e) => setNewUserName(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 outline-none focus:border-[#E5C158]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-stone-400 uppercase tracking-wider block">Assigned Auth/Shift Role</label>
+                  <select 
+                    value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as any)}
+                    className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 font-bold outline-none cursor-pointer text-stone-200"
+                  >
+                    <option value={UserRole.WAITER}>{UserRole.WAITER}</option>
+                    <option value={UserRole.CASHIER}>{UserRole.CASHIER}</option>
+                    <option value={UserRole.MANAGER}>{UserRole.MANAGER}</option>
+                    <option value={UserRole.DEVELOPER}>{UserRole.DEVELOPER} / ADMIN</option>
+                  </select>
+                </div>
+
+                {(newUserRole === UserRole.DEVELOPER || newUserRole === UserRole.MANAGER) ? (
+                  <>
+                    <div className="space-y-1 animate-fadeIn">
+                      <label className="font-bold text-stone-400 uppercase tracking-wider block">System Admin Email (Login user)</label>
+                      <input 
+                        type="email" required placeholder="name@lunacafe.com"
+                        value={newUserMail} onChange={(e) => setNewUserMail(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 text-white font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1 animate-fadeIn">
+                      <label className="font-bold text-stone-400 uppercase tracking-wider block">Security Password</label>
+                      <input 
+                        type="password" required placeholder="Enter password"
+                        value={newUserPass} onChange={(e) => setNewUserPass(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-1 animate-fadeIn">
+                    <label className="font-bold text-stone-400 uppercase tracking-wider block">Secure 4-Digit PIN Code</label>
+                    <input 
+                      type="text" maxLength={4} required placeholder="E.g. 7890"
+                      value={newUserPin} onChange={(e) => setNewUserPin(e.target.value.replace(/\D/g, ""))}
+                      className="w-full p-2.5 rounded-xl border border-stone-800 bg-stone-950 font-mono tracking-widest text-center text-sm font-black text-amber-400"
+                    />
+                  </div>
+                )}
+
+                <button 
+                  type="submit"
+                  className="w-full py-3 bg-[#E5C158] hover:bg-[#D4AF37] text-stone-950 font-black rounded-xl transition font-mono uppercase tracking-wider cursor-pointer"
+                >
+                  Generate Credentials
+                </button>
+              </form>
             </div>
 
             {/* Employee lists */}
@@ -1809,6 +1655,19 @@ export const AdminPanel: React.FC = () => {
                     <option value="58mm">Mobile Pocket (58mm)</option>
                   </select>
                 </div>
+
+                <div className="bg-stone-950 p-3 rounded-xl border border-stone-800 space-y-1.5 flex justify-between items-center">
+                  <div>
+                    <h5 className="font-bold text-stone-300">Allow Waiters to Edit Orders</h5>
+                    <p className="text-[10px] text-stone-500">Waiters can adjust active bill items before payment.</p>
+                  </div>
+                  <input 
+                    type="checkbox"
+                    checked={!!settings.allowWaiterEdit}
+                    onChange={(e) => updateSettings({ allowWaiterEdit: e.target.checked })}
+                    className="w-4 h-4 rounded text-amber-500 accent-[#E5C158] bg-stone-900 border-stone-800 outline-none cursor-pointer"
+                  />
+                </div>
               </div>
             </div>
 
@@ -2001,157 +1860,6 @@ export const AdminPanel: React.FC = () => {
         </div>
       )}
 
-      {/* PAST BILL AUDITING & EDITS MODAL */}
-      {auditingOrder && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <form onSubmit={handleSaveBillAudits} className="bg-stone-900 border border-stone-800 text-white rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl relative text-xs flex flex-col max-h-[90vh]">
-            <button 
-              type="button"
-              onClick={() => setAuditingOrder(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-full text-stone-400 hover:text-white bg-stone-950 border border-stone-800"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="flex items-center gap-2 border-b border-stone-800 pb-3 shrink-0">
-              <Printer className="w-4 h-4 text-[#E5C158]" />
-              <div>
-                <h3 className="font-black text-sm uppercase tracking-wider text-white">Audit/Edit Past Receipt</h3>
-                <p className="text-[10px] text-stone-400">Order: {auditingOrder.orderNumber} • Table: {auditingOrder.tableName}</p>
-              </div>
-            </div>
-
-            {/* List of items current in bill */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-[140px]">
-              <span className="text-[10px] text-amber-400 font-extrabold uppercase tracking-wider block">Adjust Selection Items</span>
-              {auditedItems.length === 0 ? (
-                <p className="text-center py-6 text-stone-500 font-bold uppercase">No items on this bill. Add some below.</p>
-              ) : (
-                <div className="space-y-2">
-                  {auditedItems.map(item => (
-                    <div key={item.productId} className="bg-stone-950 p-3 rounded-xl border border-stone-850 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-extrabold text-white text-xs truncate">{item.name}</p>
-                        <p className="text-[9px] text-[#E5C158] font-bold uppercase tracking-wider">
-                          Station: {productionStations.find(s => s.id === item.stationId)?.name || "Kitchen"}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-4 shrink-0 justify-between sm:justify-start">
-                        {/* Unit Price Input */}
-                        <div className="flex items-center gap-1">
-                          <span className="text-[9px] text-stone-500 font-bold uppercase">$</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={item.price}
-                            onChange={(e) => handleUpdateAuditPrice(item.productId, parseFloat(e.target.value) || 0)}
-                            className="w-16 p-1 text-center bg-stone-900 border border-stone-800 rounded text-stone-200 outline-none text-[11px] font-mono font-bold"
-                            title="Edit Unit Settle Price"
-                          />
-                        </div>
-
-                        {/* Quantity controls */}
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateAuditQty(item.productId, -1)}
-                            className="w-6 h-6 rounded-md bg-stone-855 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <span className="w-6 text-center font-bold font-mono text-white text-xs">{item.quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateAuditQty(item.productId, 1)}
-                            className="w-6 h-6 rounded-md bg-stone-855 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center cursor-pointer"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Add item search dropdown selection */}
-              <div className="pt-3 border-t border-stone-850/60 space-y-1.5 shrink-0">
-                <label className="text-[10px] text-stone-400 font-bold uppercase block">Add Dish/Beverage to Receipt</label>
-                <select
-                  value=""
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val) {
-                      handleAddProductToAudit(val);
-                      e.target.value = ""; // reset dropdown
-                    }
-                  }}
-                  className="w-full p-2.5 bg-stone-950 border border-stone-855 rounded-xl text-stone-300 font-bold outline-none cursor-pointer text-xs"
-                >
-                  <option value="" disabled>-- Choose a product from the catalog to inject --</option>
-                  {products.filter(p => !p.isArchived).map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} (${p.price.toFixed(2)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Calculations summaries & adjustments inputs */}
-            <div className="border-t border-stone-800 pt-3 space-y-3 shrink-0 bg-stone-900 p-1">
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-stone-400 font-bold uppercase block">Custom Discount ($)</label>
-                  <input 
-                    type="number" step="0.01" min="0" max="10000"
-                    value={auditDiscount} onChange={(e) => setAuditDiscount(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2 rounded-xl bg-stone-950 border border-stone-850 text-white outline-none font-mono font-bold"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-stone-400 font-bold uppercase block">Service Charge ($)</label>
-                  <input 
-                    type="number" step="0.01" min="0" max="10000"
-                    value={auditService} onChange={(e) => setAuditService(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2 rounded-xl bg-stone-950 border border-stone-850 text-white outline-none font-mono font-bold"
-                  />
-                </div>
-              </div>
-
-              {/* Justification input */}
-              <div className="space-y-1">
-                <label className="text-[10px] text-stone-400 font-bold uppercase block">Audit Note / Reason for modifying bill</label>
-                <input 
-                  type="text" required placeholder="E.g. Refunded beverage, pricing adjustment"
-                  value={auditReason} onChange={(e) => setAuditReason(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-stone-950 border border-stone-850 text-white outline-none font-medium focus:border-[#E5C158]"
-                />
-              </div>
-            </div>
-
-            {/* Submit and Controls */}
-            <div className="grid grid-cols-2 gap-2 pt-2 shrink-0 border-t border-stone-805">
-              <button 
-                type="button"
-                onClick={() => setAuditingOrder(null)}
-                className="py-2.5 bg-stone-950 hover:bg-stone-800 rounded-xl font-bold border border-stone-800 cursor-pointer text-stone-400"
-              >
-                Cancel
-              </button>
-              <button 
-                type="submit"
-                className="py-2.5 bg-[#E5C158] hover:bg-[#D4AF37] text-stone-955 font-black uppercase tracking-wider font-mono rounded-xl cursor-pointer"
-              >
-                Log Changes
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {/* ADMIN PRINTER DIALOG / PREVIEWER */}
       {printingOrder && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-xs z-50 flex items-center justify-center p-4">
@@ -2210,8 +1918,6 @@ export const AdminPanel: React.FC = () => {
                 <option value={UserRole.WAITER}>{UserRole.WAITER}</option>
                 <option value={UserRole.CASHIER}>{UserRole.CASHIER}</option>
                 <option value={UserRole.MANAGER}>{UserRole.MANAGER}</option>
-                <option value={UserRole.KITCHEN}>{UserRole.KITCHEN}</option>
-                <option value={UserRole.BARISTA}>{UserRole.BARISTA}</option>
                 <option value={UserRole.DEVELOPER}>{UserRole.DEVELOPER} / ADMIN</option>
               </select>
             </div>

@@ -24,6 +24,18 @@ export type PrintOrder = {
   discount?: number;
   tax?: number;
   total?: number;
+  serviceCharge?: number;
+  paymentMethod?: string;
+  paymentReference?: string;
+  paymentStatus?: string;
+  amountReceived?: number;
+  balanceReturned?: number;
+  customerType?: string;
+  restaurantName?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  appreciationMessage?: string;
 };
 
 const money = (n?: number) => `$${Number(n || 0).toFixed(2)}`;
@@ -37,6 +49,9 @@ function baseHtml(title: string, body: string, paper: "58mm" | "80mm" = "80mm") 
 <head>
 <meta charset="UTF-8" />
 <title>${title}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   @page {
     size: ${width} auto;
@@ -51,15 +66,18 @@ function baseHtml(title: string, body: string, paper: "58mm" | "80mm" = "80mm") 
     width: ${width};
     margin: 0;
     padding: 4px 6px;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: #000;
     font-size: ${paper === "58mm" ? "11px" : "13px"};
-    line-height: 1.15;
+    line-height: 1.25;
   }
 
   .center { text-align: center; }
   .bold { font-weight: 900; }
   .small { font-size: ${paper === "58mm" ? "9px" : "11px"}; }
+  .font-mono, [style*="font-family: monospace"] {
+    font-family: 'JetBrains Mono', Courier, monospace !important;
+  }
 
   .shop-title {
     font-size: ${paper === "58mm" ? "17px" : "22px"};
@@ -185,6 +203,54 @@ function openPrintWindow(html: string) {
   printWindow.document.close();
 }
 
+const CODE39_MAP: Record<string, string> = {
+  '0': 'nnnwwnwnn', '1': 'wnnwnnnnw', '2': 'nnwwnnnnw', '3': 'wnwwnnnnn',
+  '4': 'nnnwwnnnw', '5': 'wnnwwnnnn', '6': 'nnwwwnnnn', '7': 'nnnwnnwnw',
+  '8': 'wnnwnnwnn', '9': 'nnwwnnwnn',
+  'A': 'wnnnnwnnw', 'B': 'nnwnnwnnw', 'C': 'wnwnnwnnn', 'D': 'nnnnwwnnw',
+  'E': 'wnnnwwnnn', 'F': 'nnwnwwnnn', 'G': 'nnnnnwwnw', 'H': 'wnnnnwwnn',
+  'I': 'nnwnnwwnn', 'J': 'nnnnwwwnn', 'K': 'wnnnnnnww', 'L': 'nnwnnnnww',
+  'M': 'wnwnnnnwn', 'N': 'nnnnwnnww', 'O': 'wnnnwnnwn', 'P': 'nnwnwnnwn',
+  'Q': 'nnnnnnwww', 'R': 'wnnnnnwwn', 'S': 'nnwnnnwwn', 'T': 'nnnnwnwwn',
+  'U': 'wwnnnnnnw', 'V': 'nwwnnnnnw', 'W': 'wwwnnnnnn', 'X': 'nwnnwnnnw',
+  'Y': 'wwnnwnnnn', 'Z': 'nwwnwnnnn',
+  '-': 'nwnnnnwnw', '.': 'wwnnnnwnn', ' ': 'nwwnnnwnn', '*': 'nwnnwnwnn'
+};
+
+export function getBarcodeSVG(orderNo: string | number): string {
+  const sanitized = String(orderNo).toUpperCase().replace(/[^0-9A-Z\-\. ]/g, '');
+  const fullText = `*${sanitized || "LN-ORDER"}*`;
+  
+  const narrowWidth = 1.1;
+  const wideWidth = 2.6;
+  const gapWidth = 1.0;
+  
+  let currentX = 0;
+  const paths: string[] = [];
+  
+  for (let c = 0; c < fullText.length; c++) {
+    const char = fullText[c];
+    const pattern = CODE39_MAP[char] || CODE39_MAP[' '];
+    
+    for (let i = 0; i < 9; i++) {
+      const isBar = i % 2 === 0;
+      const isWide = pattern[i] === 'w';
+      const width = isWide ? wideWidth : narrowWidth;
+      
+      if (isBar) {
+        paths.push(`<rect x="${currentX.toFixed(1)}" y="0" width="${width.toFixed(1)}" height="32" fill="black" />`);
+      }
+      currentX += width;
+    }
+    currentX += gapWidth;
+  }
+  
+  const totalWidth = Math.ceil(currentX);
+  return `<svg width="100%" height="100%" viewBox="0 0 ${totalWidth} 32" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="display: block;">
+    ${paths.join('')}
+  </svg>`;
+}
+
 export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
   // Aggregate items by name for the customer bill print to handle split lines elegantly
   const aggregated: { [key: string]: PrintItem } = {};
@@ -197,58 +263,167 @@ export function printBill(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
   });
   const billItems = Object.values(aggregated);
 
+  const restaurantName = order.restaurantName || "LUNA CAFÈ";
+  const address = order.address || "Las Anod";
+  const phone = order.phone || "+252 904 440 414";
+  const email = order.email || "";
+
+  // Set header status banner
+  const isPaid = order.paymentStatus === "Paid";
+  const bannerText = isPaid ? "OFFICIAL PAID RECEIPT" : "CUSTOMER BILL INVOICE";
+  
+  const paymentDetailsHtml = isPaid
+    ? `
+      <div style="border-top: 1px dashed #000; margin: 6px 0;"></div>
+      <div class="row" style="margin: 3px 0; font-size: ${paper === "58mm" ? "9.5px" : "11.5px"};">
+        <span><b>PAYMENT STATUS:</b></span>
+        <span style="color: #059669; font-weight: bold; font-family: monospace; border: 1px solid #10b981; padding: 1px 4px; border-radius: 3px; font-size: 8px;">[ PAID & SETTLED ]</span>
+      </div>
+      <div class="row" style="margin: 3px 0; font-size: ${paper === "58mm" ? "9.5px" : "11.5px"};">
+        <span>Payment Method:</span>
+        <b style="text-transform: uppercase;">${order.paymentMethod || "Cash"}</b>
+      </div>
+      ${
+        order.paymentReference
+          ? `<div class="row" style="margin: 3px 0; font-size: ${paper === "58mm" ? "9.5px" : "11.5px"};">
+              <span>Reference/Tx ID:</span>
+              <b style="font-family: monospace;">${order.paymentReference}</b>
+             </div>`
+          : ""
+      }
+      ${
+        order.amountReceived && order.amountReceived > 0
+          ? `<div class="row" style="margin: 3px 0; font-size: ${paper === "58mm" ? "9.5px" : "11.5px"};">
+              <span>Amount Received:</span>
+              <b>${money(order.amountReceived)}</b>
+             </div>`
+          : ""
+      }
+      ${
+        order.balanceReturned && order.balanceReturned > 0
+          ? `<div class="row" style="margin: 3px 0; font-size: ${paper === "58mm" ? "9.5px" : "11.5px"};">
+              <span>Change Returned:</span>
+              <b>${money(order.balanceReturned)}</b>
+             </div>`
+          : ""
+      }
+    `
+    : `
+      <div style="border-top: 1px dashed #000; margin: 6px 0;"></div>
+      <div class="row" style="margin: 3px 0; font-size: ${paper === "58mm" ? "9.5px" : "11.5px"};">
+        <span><b>PAYMENT STATUS:</b></span>
+        <span style="color: #dc2626; font-weight: bold; font-family: monospace; border: 1px solid #ef4444; padding: 1px 4px; border-radius: 3px; font-size: 8px;">[ UNPAID / PENDING ]</span>
+      </div>
+    `;
+
   const body = `
-    <div class="center">
-      <div class="shop-title">LUNA CAFÈ</div>
-      <div class="small bold">Las Anod</div>
+    <div class="center" style="margin-bottom: 4px;">
+      <div class="shop-title" style="font-weight: 900; line-height: 1.1;">${restaurantName}</div>
+      <div class="small bold" style="margin-top: 2px; text-transform: uppercase;">${address}</div>
+      ${phone ? `<div class="small font-mono">Tel: ${phone}</div>` : ""}
+      ${email ? `<div class="small font-mono">Email: ${email}</div>` : ""}
     </div>
 
-    <div class="receipt-title">CUSTOMER BILL</div>
+    <div class="receipt-title" style="margin: 6px 0; font-weight: 900; letter-spacing: 0.5px;">${bannerText}</div>
 
-    <div class="row"><span>Order</span><b>#${order.orderNo}</b></div>
-    <div class="row"><span>Table</span><b>${order.table || "-"}</b></div>
-    <div class="row"><span>Waiter</span><b>${order.waiter || "-"}</b></div>
-    <div class="row"><span>Cashier</span><b>${order.cashier || "-"}</b></div>
-    <div class="row"><span>Date</span><b>${order.createdAt || new Date().toLocaleString()}</b></div>
+    <div style="font-size: ${paper === "58mm" ? "9.5px" : "11.5px"}; line-height: 1.4; font-family: monospace; font-weight: bold; margin-bottom: 6px;">
+      <div class="row"><span>Order Ref:</span><b>#${order.orderNo}</b></div>
+      <div class="row"><span>Table/Section:</span><b style="text-transform: uppercase;">${order.table || "-"}</b></div>
+      <div class="row"><span>Waiter Code:</span><span>${order.waiter || "-"}</span></div>
+      <div class="row"><span>Settle Cashier:</span><span>${order.cashier || "-"}</span></div>
+      <div class="row"><span>Date/Timestamp:</span><span style="white-space: nowrap;">${order.createdAt || new Date().toLocaleString()}</span></div>
+      ${order.customerType ? `<div class="row"><span>Service Mode:</span><span style="text-transform: uppercase;">${order.customerType}</span></div>` : ""}
+    </div>
 
-    <div class="section-title">ITEMS</div>
+    <div class="section-title">BILL TRANSACTION ITEMS</div>
 
-    ${billItems
-      .map(
-        item => `
-        <div class="item-row">
-          <div class="item-name">${item.name}</div>
-          <div class="qty">x${item.qty}</div>
-          <div class="price">${money((item.price || 0) * item.qty)}</div>
-        </div>
-      `
-      )
-      .join("")}
+    <!-- Items Listing -->
+    <div style="margin-top: 4px; margin-bottom: 4px;">
+      ${billItems
+        .map(
+          item => `
+          <div style="padding: 4px 0; border-bottom: 1px dotted #ccc;">
+            <div class="row" style="font-size: ${paper === "58mm" ? "10px" : "12px"}; font-weight: 800;">
+              <span>${item.name}</span>
+              <span style="font-family: monospace;">${money((item.price || 0) * item.qty)}</span>
+            </div>
+            <div class="row" style="padding-left: 2px; font-family: monospace; font-size: ${paper === "58mm" ? "8.5px" : "10px"}; color: #444;">
+              <span>${item.qty} Qty x ${money(item.price)} each</span>
+            </div>
+            ${item.note ? `<div style="padding-left: 8px; color: #555; font-size: ${paper === "58mm" ? "8px" : "9.5px"}; italic;">* Note: ${item.note}</div>` : ""}
+          </div>
+        `
+        )
+        .join("")}
+    </div>
 
-    <div class="section-title">PAYMENT SUMMARY</div>
+    <div class="section-title">PAYMENT BREAKDOWN</div>
 
-    <div class="row"><span>Subtotal</span><b>${money(order.subtotal)}</b></div>
-    <div class="row"><span>Discount</span><b>${money(order.discount)}</b></div>
-    <div class="row"><span>VAT/Tax</span><b>${money(order.tax)}</b></div>
+    <div style="font-family: monospace; font-size: ${paper === "58mm" ? "10px" : "12px"}; line-height: 1.4; padding: 2px 0;">
+      <div class="row"><span>Subtotal Amount:</span><b>${money(order.subtotal)}</b></div>
+      ${
+        order.discount && order.discount > 0
+          ? `<div class="row" style="color: #444;"><span>Discount Rebate:</span><b>-${money(order.discount)}</b></div>`
+          : ""
+      }
+      <div class="row"><span>VAT/Tax Applied:</span><b>${money(order.tax)}</b></div>
+      ${
+        order.serviceCharge && order.serviceCharge > 0
+          ? `<div class="row"><span>Service Charge:</span><b>${money(order.serviceCharge)}</b></div>`
+          : ""
+      }
+    </div>
 
-    <div class="total-box">
-      <div class="total-row">
-        <span>TOTAL</span>
-        <span>${money(order.total)}</span>
+    <div class="total-box" style="margin-top: 4px; margin-bottom: 6px;">
+      <div class="total-row" style="font-family: monospace;">
+        <span>GRAND TOTAL:</span>
+        <span style="font-weight: 900;">${money(order.total)}</span>
       </div>
     </div>
 
-    <div class="center bold" style="margin-top: 8px; font-size: ${paper === "58mm" ? "9px" : "11px"}; tracking-wide: 0.5px;">MOBILE MONEY ACCOUNTS</div>
-    <div style="border: 1px dashed #000; border-radius: 4px; padding: 4px 6px; margin: 4px 0 8px 0; font-size: ${paper === "58mm" ? "9px" : "11px"}; line-height: 1.3;">
-      <div class="row"><b>Zaad</b><b>480495</b></div>
-      <div class="row"><b>Sahal</b><b>319347</b></div>
-      <div class="row"><b>eDahab</b><b>759816</b></div>
-      <div class="row"><b>MyCash</b><b>951993</b></div>
-      <div class="row"><b>TPlus</b><b>871056</b></div>
-      <p style="margin: 4px 0 0 0; font-size: ${paper === "58mm" ? "7.5px" : "9px"}; text-align: center; font-weight: normal; font-style: italic;">Pay using one of the accounts above, then show staff receipt ID.</p>
+    <!-- Payments Details -->
+    ${paymentDetailsHtml}
+
+    <!-- Accepted Payment Methods accounts -->
+    <div style="margin-top: 10px;">
+      <div class="center bold" style="font-size: ${paper === "58mm" ? "8.5px" : "10px"}; letter-spacing: 0.5px; border-bottom: 1.5px solid #000; padding-bottom: 2px; margin-bottom: 4px;">ACCEPTED PAYMENT METHODS</div>
+      <div style="border: 1px dashed #000; border-radius: 4px; padding: 4px 6px; font-size: ${paper === "58mm" ? "9px" : "11px"}; font-family: monospace; line-height: 1.35; background-color: #fafafa;">
+        <div class="row"><span><b>ZAAD</b></span><b>480495</b></div>
+        <div class="row"><span><b>SAHAL</b></span><b>319347</b></div>
+        <div class="row"><span><b>EDAHAB</b></span><b>759816</b></div>
+        <div class="row"><span><b>MYCASH</b></span><b>951993</b></div>
+        <div class="row"><span><b>TPLUS</b></span><b>871056</b></div>
+        <div style="border-top: 1px dashed #000; margin: 4px 0;"></div>
+        <p style="margin: 0; font-size: ${paper === "58mm" ? "7.5px" : "9px"}; text-align: center; font-weight: normal; font-style: italic; color: #333;">Please display the Reference ID to the barista or cashier after completing the mobile money transaction.</p>
+      </div>
     </div>
 
-    <div class="footer">THANK YOU — COME AGAIN</div>
+    <!-- Scannable Codes for Thermal Printer -->
+    <div style="margin-top: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;">
+      
+      <!-- Barcode Card -->
+      <div style="background-color: #ffffff; border: 1px solid #d1d5db; border-radius: 12px; padding: 6px 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 180px; margin: 0 auto; box-sizing: border-box; text-align: center; height: 50px;">
+        <div style="width: 154px; height: 24px; overflow: hidden; margin: 0 auto;">
+          ${getBarcodeSVG(order.orderNo)}
+        </div>
+        <div style="font-family: monospace; font-weight: 700; font-size: 8.5px; letter-spacing: 3.5px; text-transform: uppercase; margin-top: 2px; text-align: center; color: #111827;">
+          ${String(order.orderNo).toUpperCase().replace(/[^0-9A-Z\-\.]/g, '').split('').join(' ')}
+        </div>
+      </div>
+      <div style="font-size: 6px; font-weight: bold; text-align: center; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; margin-bottom: 3px;">
+        Receipt Reference Barcode
+      </div>
+
+    </div>
+
+    <div style="border-top: 2px dashed #000; margin-top: 10px; margin-bottom: 6px;"></div>
+    <div class="footer" style="font-weight: bold; font-family: sans-serif; font-size: ${paper === "58mm" ? "9px" : "10.5px"}; line-height: 1.35; margin-top: 4px;">
+      ${order.appreciationMessage || "We Look Forward To Serving You Again, Welcome"}
+    </div>
+    
+    <div class="center" style="margin-top: 10px; font-size: 8px; color: #777; font-family: monospace;">
+      - - - - - - - - - - Tear Here - - - - - - - - - -
+    </div>
   `;
 
   openPrintWindow(baseHtml("Bill Print", body, paper));
@@ -360,7 +535,7 @@ export function printBar(order: PrintOrder, paper: "58mm" | "80mm" = "80mm") {
   openPrintWindow(baseHtml("Bar Print", body, paper));
 }
 
-function mapOrderToPrintOrder(order: Order): PrintOrder {
+function mapOrderToPrintOrder(order: Order, settings?: SystemSettings): PrintOrder {
   return {
     orderNo: order.orderNumber,
     table: order.tableName,
@@ -402,7 +577,19 @@ function mapOrderToPrintOrder(order: Order): PrintOrder {
     subtotal: order.subtotal,
     discount: order.discountAmount || 0,
     tax: order.vatAmount || 0,
-    total: order.grandTotal
+    total: order.grandTotal,
+    serviceCharge: order.serviceCharge || 0,
+    paymentMethod: order.paymentMethod,
+    paymentReference: order.paymentReference,
+    paymentStatus: order.status === OrderStatus.PAID ? "Paid" : "Unpaid",
+    amountReceived: order.amountReceived || 0,
+    balanceReturned: order.balanceReturned || 0,
+    customerType: order.customerType,
+    restaurantName: settings?.restaurantName || "LUNA CAFÈ",
+    address: settings?.address || "Las Anod",
+    phone: settings?.phone || "+252 904 440 414",
+    email: settings?.email || "",
+    appreciationMessage: settings?.appreciationMessage || "We Look Forward To Serving You Again, Welcome"
   };
 }
 
@@ -428,7 +615,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
     }
   }, [settings]);
 
-  const [selectedStation, setSelectedStation] = useState<"kitchen" | "bar" | "bill">(() => {
+  const [selectedStation, setSelectedStation] = useState<"kitchen" | "bar" | "bill" >(() => {
     if (type === "customer") return "bill";
     if (type === "barista") return "bar";
     return "kitchen";
@@ -489,7 +676,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
       });
 
   const handlePrint = () => {
-    const printOrder = mapOrderToPrintOrder(order);
+    const printOrder = mapOrderToPrintOrder(order, settings);
     if (selectedStation === "bill") {
       printBill(printOrder, paperWidth);
     } else if (selectedStation === "kitchen") {
@@ -502,7 +689,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
   };
 
   const handleDownloadPDF = () => {
-    const printOrder = mapOrderToPrintOrder(order);
+    const printOrder = mapOrderToPrintOrder(order, settings);
     const title = selectedStation === "bill" ? "Bill Print" : selectedStation === "kitchen" ? "Kitchen Print" : "Bar Print";
     let bodyText = "";
     if (selectedStation === "bill") {
@@ -531,15 +718,6 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
         <div class="row"><span>VAT/Tax</span><b>${money(order.vatAmount)}</b></div>
         <div class="total-box">
           <div class="total-row"><span>TOTAL</span><span>${money(order.grandTotal)}</span></div>
-        </div>
-        <div class="center bold" style="margin-top: 8px; font-size: ${paperWidth === "58mm" ? "9px" : "11px"}; tracking-wide: 0.5px;">MOBILE MONEY ACCOUNTS</div>
-        <div style="border: 1px dashed #000; border-radius: 4px; padding: 4px 6px; margin: 4px 0 8px 0; font-size: ${paperWidth === "58mm" ? "9px" : "11px"}; line-height: 1.3;">
-          <div class="row"><b>Zaad</b><b>480495</b></div>
-          <div class="row"><b>Sahal</b><b>319347</b></div>
-          <div class="row"><b>eDahab</b><b>759816</b></div>
-          <div class="row"><b>MyCash</b><b>951993</b></div>
-          <div class="row"><b>TPlus</b><b>871056</b></div>
-          <p style="margin: 4px 0 0 0; font-size: ${paperWidth === "58mm" ? "7.5px" : "9px"}; text-align: center; font-weight: normal; font-style: italic;">Pay using one of the accounts above, then show staff receipt ID.</p>
         </div>
         <div class="footer">${settings.welcomeMessage || "THANK YOU — COME AGAIN"}</div>
       `;
@@ -721,7 +899,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
           className={`w-full bg-white text-black p-4 border border-neutral-300 rounded shadow-md relative transition-all duration-200 ${
             paperWidth === "58mm" ? "max-w-[230px]" : "max-w-[310px]"
           }`}
-          style={{ fontFamily: "'Courier New', Courier, monospace", lineHeight: "1.2" }}
+          style={{ fontFamily: "'Inter', sans-serif", lineHeight: "1.35" }}
         >
           {/* Decorative notches */}
           <div className="absolute top-0 left-0 right-0 h-1 bg-neutral-150 flex justify-between px-2 overflow-hidden select-none whitespace-nowrap">
@@ -771,7 +949,7 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
               </div>
               <div className="flex justify-between">
                 <span>CASHIER:</span>
-                <span>{order.cashierName || "Farhan"}</span>
+                <span>{order.cashierName || "Siti"}</span>
               </div>
               <div className="flex justify-between border-b border-dashed border-black pb-1">
                 <span>DATE/TIME:</span>
@@ -870,62 +1048,105 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
 
             {/* Bill Summary section */}
             {selectedStation === "bill" ? (
-              <div className="pt-1 border-t border-dashed border-black space-y-0.5 text-[9px] font-bold">
+              <div className="pt-2 border-t border-dashed border-black space-y-1 text-[9px] text-black">
                 <div className="flex justify-between font-bold text-neutral-700">
-                  <span>SUBTOTAL AMOUNT</span>
-                  <span>${subTotalAmount.toFixed(2)}</span>
+                  <span>SUBTOTAL AMOUNT:</span>
+                  <span className="font-mono">${subTotalAmount.toFixed(2)}</span>
                 </div>
                 {discountAmount > 0 && (
                   <div className="flex justify-between text-neutral-700">
-                    <span>DISCOUNT APPLIED</span>
-                    <span>-${discountAmount.toFixed(2)}</span>
+                    <span>DISCOUNT APPLIED:</span>
+                    <span className="font-mono">-${discountAmount.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-neutral-700">
-                  <span>VAT TAX ({settings.vatPercentage || 5}%)</span>
-                  <span>${vatAmountVal.toFixed(2)}</span>
+                  <span>VAT TAX ({settings.vatPercentage || 5}%):</span>
+                  <span className="font-mono">${vatAmountVal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-[11px] font-black border-t-2 border-double border-black pt-1">
-                  <span>GRAND TOTAL DET</span>
-                  <span>${finalGrandTotal.toFixed(2)}</span>
+                {order.serviceCharge && order.serviceCharge > 0 ? (
+                  <div className="flex justify-between text-neutral-700">
+                    <span>SERVICE CHARGE:</span>
+                    <span className="font-mono">${order.serviceCharge.toFixed(2)}</span>
+                  </div>
+                ) : null}
+                
+                <div className="flex justify-between text-[11px] font-black border-t-2 border-double border-black pt-1.5 pb-1">
+                  <span>GRAND TOTAL:</span>
+                  <span className="font-mono text-xs">${finalGrandTotal.toFixed(2)}</span>
                 </div>
-                {order.paymentMethod && (
-                  <div className="p-1 bg-neutral-100 border border-neutral-200 rounded mt-1 text-[8px] text-neutral-750">
-                    <div className="flex justify-between">
-                      <span>CHANNEL:</span>
-                      <span className="font-black">{order.paymentMethod}</span>
-                    </div>
-                    {order.paymentReference && (
+
+                {/* Payment Status & Details */}
+                <div className="pt-1.5 border-t border-dotted border-neutral-400 space-y-1 text-[8.5px]">
+                  <div className="flex justify-between items-center">
+                    <span>PAYMENT STATUS:</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                      order.status === OrderStatus.PAID
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                        : "bg-red-100 text-red-800 border border-red-300"
+                    }`}>
+                      {order.status === OrderStatus.PAID ? "Paid & Settled" : "Pending Payment"}
+                    </span>
+                  </div>
+
+                  {order.status === OrderStatus.PAID && (
+                    <div className="bg-neutral-50 border border-neutral-200 rounded p-1.5 space-y-1">
                       <div className="flex justify-between">
-                        <span>REFERENCE:</span>
-                        <span className="font-mono font-bold">{order.paymentReference}</span>
+                        <span>Paid Via:</span>
+                        <span className="font-extrabold uppercase">{order.paymentMethod || "Cash"}</span>
                       </div>
-                    )}
+                      {order.paymentReference && (
+                        <div className="flex justify-between">
+                          <span>Ref Code:</span>
+                          <span className="font-mono font-bold">{order.paymentReference}</span>
+                        </div>
+                      )}
+                      {order.amountReceived && order.amountReceived > 0 ? (
+                        <div className="flex justify-between">
+                          <span>Amt Tendered:</span>
+                          <span className="font-mono">${order.amountReceived.toFixed(2)}</span>
+                        </div>
+                      ) : null}
+                      {order.balanceReturned && order.balanceReturned > 0 ? (
+                        <div className="flex justify-between">
+                          <span>Change Ret:</span>
+                          <span className="font-mono">${order.balanceReturned.toFixed(2)}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+
+                {/* Accepted Payment Methods box */}
+                <div className="mt-3.5 space-y-1.5">
+                  <div className="text-center font-black text-neutral-800 text-[8.5px] border-b border-neutral-300 pb-1">
+                    ACCEPTED PAYMENT METHODS
                   </div>
-                )}
-                <div className="mt-2.5 p-2 bg-neutral-50 border border-dotted border-neutral-400 rounded-lg space-y-1 text-[8px] text-black">
-                  <div className="font-black text-center text-neutral-900 tracking-wider">MOBILE MONEY ACCOUNTS</div>
-                  <div className="flex justify-between font-bold">
-                    <span>Zaad</span>
-                    <span className="font-mono font-black">480495</span>
+                  <div className="border border-dashed border-neutral-400 rounded-lg p-2.5 bg-neutral-50 space-y-1 font-mono text-[8px] text-neutral-800">
+                    <div className="flex justify-between font-bold">
+                      <span>ZAAD</span>
+                      <span className="font-black">480495</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>SAHAL</span>
+                      <span className="font-black">319347</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>EDAHAB</span>
+                      <span className="font-black">759816</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>MYCASH</span>
+                      <span className="font-black">951993</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>TPLUS</span>
+                      <span className="font-black">871056</span>
+                    </div>
+                    <div className="border-t border-dashed border-neutral-300 my-1"></div>
+                    <p className="text-[7px] leading-tight text-center italic text-neutral-600 font-sans font-medium">
+                      Please show the transaction reference ID to cashier after sending the money.
+                    </p>
                   </div>
-                  <div className="flex justify-between font-bold">
-                    <span>Sahal</span>
-                    <span className="font-mono font-black">319347</span>
-                  </div>
-                  <div className="flex justify-between font-bold">
-                    <span>eDahab</span>
-                    <span className="font-mono font-black">759816</span>
-                  </div>
-                  <div className="flex justify-between font-bold">
-                    <span>MyCash</span>
-                    <span className="font-mono font-black">951993</span>
-                  </div>
-                  <div className="flex justify-between font-bold">
-                    <span>TPlus</span>
-                    <span className="font-mono font-black">871056</span>
-                  </div>
-                  <p className="text-[6.5px] mt-1 text-center font-medium italic text-neutral-500">Pay using one of the accounts above, then show staff receipt ID.</p>
                 </div>
               </div>
             ) : (
@@ -934,20 +1155,23 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
               </div>
             )}
 
-            {/* Simulated Scannable table QR graphic */}
+            {/* Scannable Codes Section */}
             {selectedStation === "bill" && (
-              <div className="flex flex-col items-center justify-center pt-2 pb-1 border-t border-dashed border-neutral-300">
-                <div className="w-[50px] h-[50px] bg-white border border-neutral-200 p-0.5 rounded flex items-center justify-center">
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${encodeURIComponent(`${window.location.origin}/?table=${order.tableId}`)}`}
-                    alt="Table QR"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-contain"
-                  />
+              <div className="pt-2 pb-1 border-t border-dashed border-neutral-300 space-y-2.5">
+                
+                {/* 1. Narrow Barcode Card styled exactly like the user's reference image */}
+                <div className="flex flex-col items-center">
+                  <div className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 flex flex-col items-center justify-center w-full max-w-[180px] shadow-xs">
+                    <div className="w-full h-[22px] overflow-hidden" dangerouslySetInnerHTML={{ __html: getBarcodeSVG(order.orderNumber) }} />
+                    <span className="text-[7.5px] font-mono font-bold tracking-[0.3em] uppercase mt-0.5 text-neutral-800 text-center translate-x-[0.15em] select-all">
+                      {String(order.orderNumber).toUpperCase().replace(/[^0-9A-Z\-\.]/g, '').split('').join(' ')}
+                    </span>
+                  </div>
+                  <span className="text-[6px] text-neutral-500 font-sans font-extrabold tracking-widest uppercase mt-0.5 text-center">
+                    RECEIPT REFERENCE BARCODE
+                  </span>
                 </div>
-                <span className="text-[6.5px] text-neutral-600 font-bold tracking-tight uppercase mt-0.5 text-center">
-                  Scan to Settle / Re-Order
-                </span>
+
               </div>
             )}
 
@@ -1062,189 +1286,3 @@ export const ReceiptView: React.FC<ReceiptProps> = ({ order, settings, type, onC
     </div>
   );
 };
-type LocalReceiptItem = {
-  name: string;
-  qty: number;
-  price: number;
-  station?: "kitchen" | "bar" | "coffee";
-};
-
-type LocalReceiptOrder = {
-  receiptNo: string;
-  billNo: string;
-  table: string;
-  waiter: string;
-  status: string;
-  date: string;
-  items: LocalReceiptItem[];
-  vatRate?: number;
-};
-
-const formatPlain = (n: number) => n.toFixed(2);
-
-export function printCustomerReceipt(order: LocalReceiptOrder, paper: "58mm" | "80mm" = "80mm") {
-  const subtotal = order.items.reduce((s, i) => s + i.price * i.qty, 0);
-  const vat = subtotal * (order.vatRate ?? 0.05);
-  const total = subtotal + vat;
-
-  const html = `
-  <html>
-  <head>
-    <style>
-      @page { size: ${paper} auto; margin: 0; }
-      body {
-        font-family: Arial, sans-serif;
-        width: ${paper === "80mm" ? "72mm" : "48mm"};
-        margin: 0 auto;
-        padding: 6px;
-        color: #000;
-        font-size: ${paper === "80mm" ? "12px" : "10px"};
-      }
-      .center { text-align: center; }
-      .bold { font-weight: 800; }
-      .title { font-size: ${paper === "80mm" ? "22px" : "17px"}; font-weight: 900; }
-      .line { border-top: 1px dashed #000; margin: 6px 0; }
-      .row { display: flex; justify-content: space-between; gap: 6px; }
-      .item { margin: 7px 0; }
-      .item-name { font-weight: 800; font-size: ${paper === "80mm" ? "14px" : "11px"}; }
-      .total { font-size: ${paper === "80mm" ? "18px" : "15px"}; font-weight: 900; }
-      .accounts {
-        border: 1px dashed #000;
-        border-radius: 6px;
-        padding: 6px;
-        margin-top: 6px;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="center">
-      <div class="title">Luna Cafe</div>
-      <div>Luna Cafe, Laascaanood, Sool, Somalia</div>
-      <div>Tel: +252904440414</div>
-    </div>
-
-    <div class="line"></div>
-
-    <div class="row"><span>Receipt:</span><b>#${order.receiptNo}</b></div>
-    <div class="row"><span>Date:</span><span>${order.date}</span></div>
-    <div class="row"><span>Table:</span><b>${order.table}</b></div>
-    <div class="row"><span>Status:</span><b>${order.status}</b></div>
-    <div class="row"><span>Waiter:</span><b>${order.waiter}</b></div>
-    <div class="row"><span>Bill No:</span><b>${order.billNo}</b></div>
-
-    <div class="line"></div>
-    <div class="bold">ITEMS</div>
-
-    ${order.items.map(i => `
-      <div class="item">
-        <div class="row">
-          <span class="item-name">${i.name}</span>
-          <span class="bold">${formatPlain(i.price * i.qty)}</span>
-        </div>
-        <div>${formatPlain(i.price)} x ${i.qty}</div>
-      </div>
-      <div class="line"></div>
-    `).join("")}
-
-    <div class="row"><span>Subtotal</span><b>${formatPlain(subtotal)}</b></div>
-    <div class="row"><span>VAT (${((order.vatRate ?? 0.05) * 100).toFixed(0)}%)</span><b>${formatPlain(vat)}</b></div>
-
-    <div class="line"></div>
-    <div class="row total"><span>TOTAL</span><span>${formatPlain(total)}</span></div>
-    <div class="line"></div>
-
-    <div class="bold">MOBILE MONEY ACCOUNTS</div>
-    <div class="accounts">
-      <div class="row"><b>Zaad</b><b>480495</b></div>
-      <div class="row"><b>Sahal</b><b>319347</b></div>
-      <div class="row"><b>eDahab</b><b>759816</b></div>
-      <div class="row"><b>MyCash</b><b>951993</b></div>
-      <div class="row"><b>TPlus</b><b>871056</b></div>
-      <p>Pay using one of the accounts above, then show staff your receipt ID.</p>
-    </div>
-
-    <div class="line"></div>
-    <div class="center bold">Thank You ❤️</div>
-    <div class="center">Please come again</div>
-  </body>
-  </html>`;
-
-  printHtml(html);
-}
-
-export function printStationTicket(
-  order: LocalReceiptOrder,
-  station: "kitchen" | "bar" | "coffee",
-  paper: "58mm" | "80mm" = "80mm"
-) {
-  const stationItems = order.items.filter(i => i.station === station);
-
-  if (stationItems.length === 0) return;
-
-  const title = station.toUpperCase() + " TICKET";
-
-  const html = `
-  <html>
-  <head>
-    <style>
-      @page { size: ${paper} auto; margin: 0; }
-      body {
-        font-family: Arial, sans-serif;
-        width: ${paper === "80mm" ? "72mm" : "48mm"};
-        margin: 0 auto;
-        padding: 6px;
-        color: #000;
-        font-size: ${paper === "80mm" ? "12px" : "10px"};
-      }
-      .center { text-align: center; }
-      .title { font-size: ${paper === "80mm" ? "22px" : "17px"}; font-weight: 900; }
-      .line { border-top: 2px dashed #000; margin: 7px 0; }
-      .row { display: flex; justify-content: space-between; gap: 6px; }
-      .big-order { font-size: ${paper === "80mm" ? "24px" : "18px"}; font-weight: 900; }
-      .item { font-weight: 900; font-size: ${paper === "80mm" ? "14px" : "11px"}; margin: 10px 0; }
-    </style>
-  </head>
-  <body>
-    <div class="center title">${title}</div>
-    <div class="line"></div>
-
-    <div class="row"><span>Order</span><span class="big-order">#${order.receiptNo}</span></div>
-    <div class="row"><span>Table</span><b>${order.table}</b></div>
-    <div class="row"><span>Waiter</span><b>${order.waiter}</b></div>
-    <div class="row"><span>Time</span><span>${order.date}</span></div>
-
-    <div class="line"></div>
-
-    ${stationItems.map(i => `
-      <div class="row item">
-        <span>${i.name}</span>
-        <span>x${i.qty}</span>
-      </div>
-      <div class="line"></div>
-    `).join("")}
-
-    <div class="center">Printed: ${new Date().toLocaleString()}</div>
-  </body>
-  </html>`;
-
-  printHtml(html);
-}
-
-function printHtml(html: string) {
-  const win = window.open("", "_blank", "width=400,height=600");
-
-  if (!win) {
-    alert("Popup blocked. Please allow popups for printing.");
-    return;
-  }
-
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-
-  win.onload = () => {
-    win.focus();
-    win.print();
-    win.close();
-  };
-}

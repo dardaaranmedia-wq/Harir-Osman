@@ -1,45 +1,65 @@
 {
   "entities": {
-    "Category": {
-      "title": "Category",
-      "description": "Category for items on the menu",
+    "POSSyncState": {
+      "title": "POS Sync State",
+      "description": "Consolidated state of the Point of Sale system synchronized across all authorized devices in real time.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique category identifier" },
-        "name": { "type": "string", "description": "Display name of category" },
-        "icon": { "type": "string", "description": "Lucide icon name" },
-        "image": { "type": "string", "description": "Optional category banner image URL" }
+        "users": {
+          "type": "array",
+          "description": "List of employees and administrative auth credentials."
+        },
+        "categories": {
+          "type": "array",
+          "description": "Product menu categories."
+        },
+        "products": {
+          "type": "array",
+          "description": "Products available on the menu."
+        },
+        "tables": {
+          "type": "array",
+          "description": "Tables and seating areas layout with corresponding occupied statuses."
+        },
+        "orders": {
+          "type": "array",
+          "description": "Past and active dine-in, takeaway, and delivery orders."
+        },
+        "notifications": {
+          "type": "array",
+          "description": "Workspace alerts and printer chime triggers."
+        },
+        "productionStations": {
+          "type": "array",
+          "description": "Kitchen and barista workstation configurations."
+        },
+        "settings": {
+          "type": "object",
+          "description": "General settings of the POS venue."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last write update."
+        }
       },
-      "required": ["id", "name", "icon"]
-    },
-    "Product": {
-      "title": "Product",
-      "description": "Individual product on the menu",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string", "description": "Unique product identifier" },
-        "name": { "type": "string", "description": "Name of the item" },
-        "categoryId": { "type": "string", "description": "Reference to Category ID" },
-        "price": { "type": "number", "description": "Selling price of item" },
-        "available": { "type": "boolean", "description": "Is this product currently available" },
-        "image": { "type": "string", "description": "URL of item image" },
-        "isDrink": { "type": "boolean", "description": "Is this item a beverage" },
-        "description": { "type": "string", "description": "Short description of the item" },
-        "stationId": { "type": "string", "description": "Id of the production station responsible for preparing this" },
-        "isArchived": { "type": "boolean", "description": "Has this item been deleted/archived" },
-        "createdByAdmin": { "type": "boolean", "description": "Whether created by Admin" }
-      },
-      "required": ["id", "name", "categoryId", "price", "available", "isDrink"]
+      "required": [
+        "users",
+        "categories",
+        "products",
+        "tables",
+        "orders",
+        "notifications",
+        "productionStations",
+        "settings",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
-    "/categories/{categoryId}": {
-      "schema": "Category",
-      "description": "Menu categories collection"
-    },
-    "/products/{productId}": {
-      "schema": "Product",
-      "description": "Menu items collection"
+    "/pos_states/{stateId}": {
+      "schema": "POSSyncState",
+      "description": "Stores real-time synchronized datasets keyed by state configuration context."
     }
   }
 }

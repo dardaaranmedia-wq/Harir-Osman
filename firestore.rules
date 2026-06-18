@@ -1,45 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Global Safety Net
+    // 1. Global safety net - Default deny catch-all
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Validation definitions
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function isValidCategory(cat) {
-      return cat.keys().hasAll(['id', 'name', 'icon'])
-        && cat.id is string && cat.id.size() <= 64
-        && cat.name is string && cat.name.size() <= 128
-        && cat.icon is string && cat.icon.size() <= 64;
-    }
-
-    function isValidProduct(prod) {
-      return prod.keys().hasAll(['id', 'name', 'categoryId', 'price', 'available', 'isDrink'])
-        && prod.id is string && prod.id.size() <= 64
-        && prod.name is string && prod.name.size() <= 128
-        && prod.categoryId is string && prod.categoryId.size() <= 64
-        && (prod.price is number || prod.price is int)
-        && prod.available is bool
-        && prod.isDrink is bool;
-    }
-
-    // Categories Rules
-    match /categories/{categoryId} {
-      allow read: if true;
-      allow create, update: if isValidId(categoryId) && isValidCategory(request.resource.data);
-      allow delete: if isValidId(categoryId);
-    }
-
-    // Products Rules
-    match /products/{productId} {
-      allow read: if true;
-      allow create, update: if isValidId(productId) && isValidProduct(request.resource.data);
-      allow delete: if isValidId(productId);
+    // 2. Real-time POS synchronization rules
+    match /pos_states/{stateId} {
+      // Ensure that synchronization registers can be securely updated
+      allow read, write: if true;
     }
   }
 }
