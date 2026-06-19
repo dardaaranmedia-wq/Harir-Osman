@@ -73,6 +73,10 @@ export interface OrderItem {
   stationId?: string;
   printedToKitchen?: boolean;
   printedToBar?: boolean;
+  originalOrderNo?: string;
+  waiterName?: string;
+  tableId?: string;
+  tableName?: string;
 }
 
 export enum OrderStatus {
@@ -81,6 +85,7 @@ export enum OrderStatus {
   SERVED = "Served",          // Green: Food delivered to table
   PAID = "Paid",              // Gray: Paid and closed
   CANCELLED = "Cancelled",    // Red: Cancelled / voided orders
+  COMBINED = "Combined",      // Purple: Combined with other bills
 }
 
 export interface Order {
@@ -110,6 +115,8 @@ export interface Order {
   customerNotes?: string;
   cancelReason?: string;
   auditHistory?: OrderAuditLog[];
+  combinedFrom?: string[];
+  isCombinedChild?: boolean;
 }
 
 export interface ReceiptTemplate {

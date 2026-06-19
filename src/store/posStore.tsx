@@ -95,6 +95,7 @@ interface POSContextType {
   theme: "light" | "dark" | "white";
   setTheme: (theme: "light" | "dark" | "white") => void;
   updateOrderWaiter: (orderId: string, waiterName: string) => void;
+  combineBills: (orderIdsToCombine: string[], targetTableId: string) => Order | null;
   
   // Admin Operations
   updateVat: (pct: number) => void;
@@ -362,6 +363,126 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return prev;
     });
+  };
+
+  const combineBills = (orderIdsToCombine: string[], targetTableId: string): Order | null => {
+    // Collect all orders to be combined
+    const matchedOrders = orders.filter(o => 
+      (orderIdsToCombine.includes(o.id) || orderIdsToCombine.includes(o.orderNumber) || orderIdsToCombine.includes(o.orderNumber.replace("#", ""))) &&
+      o.status !== OrderStatus.PAID && 
+      o.status !== OrderStatus.CANCELLED &&
+      o.status !== OrderStatus.COMBINED
+    );
+
+    if (matchedOrders.length < 2) {
+      return null;
+    }
+
+    // 1. Gather all items with metadata kept
+    const combinedItems: OrderItem[] = [];
+    matchedOrders.forEach(o => {
+      o.items.forEach(item => {
+        combinedItems.push({
+          ...item,
+          originalOrderNo: o.orderNumber,
+          waiterName: o.waiterName || "Unknown",
+          tableId: o.tableId,
+          tableName: o.tableName,
+        });
+      });
+    });
+
+    const subtotal = combinedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const vatRate = settings.vatPercentage / 100;
+    const vatAmount = parseFloat((subtotal * vatRate).toFixed(2));
+    const grandTotal = parseFloat((subtotal + vatAmount).toFixed(2));
+
+    const count = orders.length + 1;
+    const orderNo = `#LN-${1000 + count}`;
+
+    const targetTable = tables.find(t => t.tableId === targetTableId);
+    const targetTableName = targetTable ? targetTable.name : "Takeaway Table";
+
+    const newOrder: Order = {
+      id: "ord-" + Math.random().toString(36).substr(2, 9),
+      orderNumber: orderNo,
+      tableId: targetTableId,
+      tableName: targetTableName,
+      items: combinedItems,
+      status: OrderStatus.NEW,
+      subtotal,
+      vatRate,
+      vatAmount,
+      grandTotal,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      waiterName: matchedOrders[0]?.waiterName || currentUser?.name || "Cashier",
+      customerNotes: `Combined bill from: ${matchedOrders.map(o => o.orderNumber).join(", ")}`,
+      paymentStatus: "Unpaid",
+      discountAmount: 0,
+      serviceCharge: 0,
+      amountReceived: 0,
+      balanceReturned: 0,
+      customerType: targetTableId.includes("takeaway") || targetTableId.includes("TK") || targetTableId.includes("Takeaway") ? "Takeaway" : "Dine-In",
+      combinedFrom: matchedOrders.map(o => o.orderNumber),
+    };
+
+    // 2. Mark historical orders as COMBINED
+    setOrders(prev => {
+      const updated = prev.map(o => {
+        if (matchedOrders.some(mo => mo.id === o.id)) {
+          return {
+            ...o,
+            status: OrderStatus.COMBINED,
+            isCombinedChild: true,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return o;
+      });
+      return [newOrder, ...updated];
+    });
+
+    // 3. Clear old tables and update the new table
+    const sourceTableIds = matchedOrders.map(o => o.tableId).filter(tid => tid !== targetTableId);
+    
+    setTables(prev => {
+      return prev.map(t => {
+        if (t.tableId === targetTableId) {
+          return { 
+            ...t, 
+            status: "ordered", 
+            assignedWaiter: newOrder.waiterName || "" 
+          };
+        }
+        if (sourceTableIds.includes(t.tableId)) {
+          // Only clear if no OTHER active (NEW/SERVED/PENDING) order is present at that table
+          const otherActiveOnTable = orders.some(o => 
+            o.tableId === t.tableId && 
+            !matchedOrders.some(mo => mo.id === o.id) &&
+            o.status !== OrderStatus.PAID && 
+            o.status !== OrderStatus.CANCELLED &&
+            o.status !== OrderStatus.COMBINED
+          );
+          if (!otherActiveOnTable) {
+            return {
+              ...t,
+              status: "available",
+              assignedWaiter: "",
+            };
+          }
+        }
+        return t;
+      });
+    });
+
+    addNotification(
+      "CASHIER",
+      `Bills Combined Successfully`,
+      `Merged ${matchedOrders.map(o => o.orderNumber).join(", ")} into new bill ${orderNo}`
+    );
+
+    return newOrder;
   };
 
   // Save changes to LocalStorage on modifications
@@ -1172,7 +1293,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       productionStations,
       loginPin, loginAdmin, logout, createOrder, approveOrder, rejectOrder, updateOrderItems, markItemsAsPrinted,
       serveOrder, cancelOrder, payOrder, adminEditPastOrder, updateOrderWithAuditTrail, addNotification, clearNotifications, markNotificationsAsRead, triggerChime,
-      theme, setTheme, updateOrderWaiter,
+      theme, setTheme, updateOrderWaiter, combineBills,
       updateVat, updateSettings, addUser, updateUser, deleteUser,
       addCategory, updateCategory, deleteCategory, addProduct, updateProduct, deleteProduct,
       addTable, removeTable, addProductionStation, updateProductionStation, deleteProductionStation, backupData, restoreData,

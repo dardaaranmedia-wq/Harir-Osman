@@ -4,18 +4,22 @@ import { Order, OrderItem, OrderStatus, Product, Table, UserRole, getSomaliaToda
 import { 
   Coffee, Layers, Check, ShoppingCart, Search, Plus, Minus, Trash2, 
   MessageSquare, Printer, CheckCircle, Flame, Coffee as Cup, ShieldCheck, X, FileText, ChevronRight, AlertTriangle,
-  Edit, Save, Calendar
+  Edit, Save, Calendar, Shuffle, GitMerge
 } from "lucide-react";
 import { ReceiptView } from "./ReceiptPrinters";
 import { LunaLogo } from "./LunaLogo";
+import { CombineBillsModal } from "./CombineBillsModal";
 
 export const StaffDashboard: React.FC = () => {
   const { 
     currentUser, categories, products, tables, orders, settings, users,
     createOrder, approveOrder, rejectOrder, updateOrderItems, serveOrder, cancelOrder, payOrder, logout,
     theme, setTheme, updateOrderWaiter, updateOrderWithAuditTrail,
-    updateProduct
+    updateProduct, combineBills
   } = usePOS();
+
+  // Show "Combine Bills" Modal
+  const [showCombineModal, setShowCombineModal] = useState(false);
 
   // Screen modes: "order" (Create Order) or "queue" (Order Queue manager)
   const [activeScreen, setActiveScreen] = useState<"order" | "queue">("order");
@@ -611,7 +615,8 @@ export const StaffDashboard: React.FC = () => {
                           order.status === OrderStatus.PENDING_QR ? "bg-amber-500" :
                           order.status === OrderStatus.NEW ? "bg-blue-500" :
                           order.status === OrderStatus.SERVED ? "bg-emerald-500" :
-                          order.status === OrderStatus.CANCELLED ? "bg-red-500" : "bg-neutral-400"
+                          order.status === OrderStatus.CANCELLED ? "bg-red-500" : 
+                          order.status === OrderStatus.COMBINED ? "bg-purple-500" : "bg-neutral-400"
                         }`} />
                         
                         <div className="flex justify-between items-start pt-1">
@@ -1155,6 +1160,17 @@ export const StaffDashboard: React.FC = () => {
                 <div className="text-[10px] text-neutral-400 font-bold uppercase hidden sm:block ml-2 select-none">
                   Tracking {filteredOrders.length} records
                 </div>
+
+                {(currentUser?.role === UserRole.CASHIER || currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.DEVELOPER) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCombineModal(true)}
+                    className="ml-3 px-3.5 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center gap-1.5 transition active:scale-95 cursor-pointer border border-purple-600"
+                  >
+                    <GitMerge className="w-3.5 h-3.5" />
+                    Combine Bills
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1242,6 +1258,22 @@ export const StaffDashboard: React.FC = () => {
                   </span>
                 </button>
 
+                {/* Tab 6: Combined (Purple) */}
+                <button 
+                  onClick={() => setQueueTab(OrderStatus.COMBINED)}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
+                    queueTab === OrderStatus.COMBINED 
+                      ? "bg-purple-600 text-white border-purple-600 shadow-xs" 
+                      : "bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-100/50"
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 bg-purple-500 rounded-full" />
+                  Combined Bills
+                  <span className="ml-1 bg-white border border-purple-300 text-purple-800 text-[10px] font-black px-1.5 py-0.5 rounded-md">
+                    {orders.filter(o => o.status === OrderStatus.COMBINED && orderMatchesDate(o)).length}
+                  </span>
+                </button>
+
               </div>
               
               <div className="flex items-center gap-3 shrink-0 ml-4 py-1">
@@ -1282,7 +1314,8 @@ export const StaffDashboard: React.FC = () => {
                         order.status === OrderStatus.PENDING_QR ? "bg-amber-500" :
                         order.status === OrderStatus.NEW ? "bg-blue-500" :
                         order.status === OrderStatus.SERVED ? "bg-emerald-500" :
-                        order.status === OrderStatus.CANCELLED ? "bg-red-500" : "bg-neutral-400"
+                        order.status === OrderStatus.CANCELLED ? "bg-red-500" : 
+                        order.status === OrderStatus.COMBINED ? "bg-purple-500" : "bg-neutral-400"
                       }`} />
 
                       {/* Topmeta */}
@@ -1489,6 +1522,35 @@ export const StaffDashboard: React.FC = () => {
                                 </span>
                               </div>
                             )}
+                          </div>
+                        )}
+
+                        {order.status === OrderStatus.COMBINED && (
+                          /* Combined order state display */
+                          <div className="bg-purple-50 border border-purple-200 text-purple-700 rounded-xl p-3 text-[11px] font-bold space-y-2">
+                            <div>
+                              <span className="block text-purple-800 uppercase tracking-wide font-extrabold mb-1">
+                                Combined Bill (Merged)
+                              </span>
+                              <span className="text-neutral-500 font-medium block leading-normal font-sans">
+                                This order has been merged into a combined bill. It is locked and kept for reporting history.
+                              </span>
+                            </div>
+                            <div className="mt-1.5 border-t border-purple-200 pt-1.5">
+                              <span className="block text-purple-800 tracking-wider font-extrabold uppercase text-[9px] font-sans">
+                                Combined Notes:
+                              </span>
+                              <span className="italic block font-black text-purple-955 mt-0.5 text-[11.5px] leading-relaxed">
+                                {order.customerNotes || "Merged into a new combined invoice"}
+                              </span>
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => { setPrintingOrder(order); setReceiptType("customer"); }}
+                              className="w-full bg-white hover:bg-purple-100/50 text-purple-750 border border-purple-200 block py-1.5 rounded-lg font-black text-center uppercase text-[10px] transition cursor-pointer"
+                            >
+                              Print Archive copy
+                            </button>
                           </div>
                         )}
 
@@ -2541,6 +2603,15 @@ export const StaffDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Combine Bills Cashier Modal Overlay */}
+      <CombineBillsModal
+        isOpen={showCombineModal}
+        onClose={() => setShowCombineModal(false)}
+        orders={orders}
+        tables={tables}
+        onCombine={combineBills}
+      />
 
       {/* Interactive print preview popup modal */}
       {printingOrder && (
